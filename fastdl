@@ -1,0 +1,1381 @@
+#!/bin/bash
+
+# FastDL - High-Performance Cross-Platform Downloader
+# Linux/macOS Wrapper Script with Auto-Setup
+# Version: 1.0.0
+
+set -euo pipefail
+
+# Configuration and globals
+FASTDL_VERSION="1.0.0"
+FASTDL_DIR="$HOME/.fastdl"
+FASTDL_CORE="$FASTDL_DIR/fastdl-core"
+FASTDL_CONFIG="$FASTDL_DIR/config.json"
+DOWNLOADS_DIR="$HOME/Downloads/FastDL"
+TEMP_DIR="/tmp/fastdl-$$"
+
+# Colors for beautiful output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+PURPLE='\033[0;35m'
+CYAN='\033[0;36m'
+BOLD='\033[1m'
+NC='\033[0m' # No Color
+
+# Logging functions
+log_info() {
+    echo -e "${BLUE}[INFO]${NC} $1"
+}
+
+log_success() {
+    echo -e "${GREEN}[SUCCESS]${NC} $1"
+}
+
+log_warning() {
+    echo -e "${YELLOW}[WARNING]${NC} $1"
+}
+
+log_error() {
+    echo -e "${RED}[ERROR]${NC} $1"
+}
+
+log_header() {
+    echo -e "\n${PURPLE}${BOLD}=== $1 ===${NC}\n"
+}
+
+# Progress spinner for long operations
+show_spinner() {
+    local -r delay=0.1
+    local spinstr="|/-\\"
+    local temp
+    while true; do
+        temp="${spinstr#?}"
+        printf " [%c]  " "${spinstr}"
+        spinstr=${temp}${spinstr%"${temp}"}
+        sleep "${delay}"
+        printf "\b\b\b\b\b\b"
+    done
+}
+
+# Clean up function
+cleanup() {
+    [[ -d "$TEMP_DIR" ]] && rm -rf "$TEMP_DIR"
+    # Kill spinner if running
+    jobs -p | xargs -r kill 2>/dev/null || true
+}
+
+trap cleanup EXIT
+
+# Check if command exists
+command_exists() {
+    command -v "$1" >/dev/null 2>&1
+}
+
+# Detect system architecture and OS
+detect_system() {
+    local os
+    local arch
+    
+    case "$(uname -s)" in
+        Linux*)     os="linux" ;;
+        Darwin*)    os="macos" ;;
+        *)          log_error "Unsupported operating system: $(uname -s)"
+                    exit 1 ;;
+    esac
+    
+    case "$(uname -m)" in
+        x86_64|amd64)   arch="x86_64" ;;
+        aarch64|arm64)  arch="aarch64" ;;
+        armv7l)         arch="armv7" ;;
+        *)              log_error "Unsupported architecture: $(uname -m)"
+                        exit 1 ;;
+    esac
+    
+    echo "${os}-${arch}"
+}
+
+# Install Rust if not present
+install_rust() {
+    if command_exists rustc && command_exists cargo; then
+        log_info "Rust is already installed"
+        return 0
+    fi
+    
+    log_info "Installing Rust toolchain..."
+    
+    # Download and install rustup
+    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable
+    
+    # Source the cargo environment
+    source "$HOME/.cargo/env" 2>/dev/null || true
+    
+    if command_exists rustc && command_exists cargo; then
+        log_success "Rust installed successfully"
+    else
+        log_error "Failed to install Rust"
+        exit 1
+    fi
+}
+
+# Install system dependencies
+install_dependencies() {
+    log_info "Installing system dependencies..."
+    
+    case "$(uname -s)" in
+        Linux*)
+            # Detect package manager and install dependencies
+            if command_exists apt-get; then
+                sudo apt-get update >/dev/null 2>&1
+                sudo apt-get install -y curl build-essential pkg-config libssl-dev >/dev/null 2>&1
+            elif command_exists yum; then
+                sudo yum groupinstall -y "Development Tools" >/dev/null 2>&1
+                sudo yum install -y curl openssl-devel >/dev/null 2>&1
+            elif command_exists dnf; then
+                sudo dnf groupinstall -y "Development Tools" >/dev/null 2>&1
+                sudo dnf install -y curl openssl-devel >/dev/null 2>&1
+            elif command_exists pacman; then
+                sudo pacman -Sy --noconfirm base-devel curl openssl >/dev/null 2>&1
+            elif command_exists zypper; then
+                sudo zypper install -y -t pattern devel_basis >/dev/null 2>&1
+                sudo zypper install -y curl libopenssl-devel >/dev/null 2>&1
+            else
+                log_warning "Unknown package manager. Please install: curl, build-essential, pkg-config, libssl-dev"
+            fi
+            ;;
+        Darwin*)
+            # macOS - check if Xcode command line tools are installed
+            if ! xcode-select -p >/dev/null 2>&1; then
+                log_info "Installing Xcode command line tools..."
+                xcode-select --install
+                log_info "Please complete Xcode installation and run this script again"
+                exit 1
+            fi
+            ;;
+    esac
+}
+
+# Build the Rust core
+build_core() {
+    log_info "Building FastDL core engine..."
+    
+    mkdir -p "$TEMP_DIR"
+    cd "$TEMP_DIR"
+    
+    # Create the Rust project structure
+    mkdir -p src
+    
+    cat > Cargo.toml << 'EOF'
+[package]
+name = "fastdl-core"
+version = "0.0.1"
+edition = "2030"
+authors = ["FastDL Team"]
+description = "High-performance cross-platform file downloader core engine"
+license = "MIT"
+
+[[bin]]
+name = "fastdl-core"
+path = "src/main.rs"
+
+[dependencies]
+tokio = { version = "1.35", features = ["full"] }
+futures-util = "0.3"
+reqwest = { version = "0.11", features = ["stream", "json"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+url = "2.4"
+urlencoding = "2.1"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
+
+[profile.dev]
+opt-level = 1
+debug = true
+EOF
+
+    cat > src/main.rs << 'EOF'
+// FastDL Core Engine - High-performance cross-platform downloader
+// Built with Rust for maximum performance and safety
+
+use std::env;
+use std::fs::{File, OpenOptions};
+use std::io::{self, BufRead, BufReader, Seek, SeekFrom, Write};
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
+use std::time::{Duration, Instant};
+
+use reqwest::{Client, Response};
+use serde::{Deserialize, Serialize};
+use tokio::fs::File as AsyncFile;
+use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
+use tokio::sync::Semaphore;
+use tokio::time::sleep;
+
+// Configuration structure - received from wrapper scripts
+#[derive(Debug, Deserialize)]
+pub struct DownloadConfig {
+    pub urls: Vec<String>,
+    pub output_dir: String,
+    pub connections: usize,
+    pub chunk_size_mb: usize,
+    pub timeout_seconds: u64,
+    pub retries: usize,
+    pub max_concurrent: usize,
+    pub url_file: Option<String>,
+    pub verbose: bool,
+}
+
+// Progress information sent back to wrapper
+#[derive(Debug, Serialize)]
+pub struct DownloadProgress {
+    pub url: String,
+    pub filename: String,
+    pub total_size: u64,
+    pub downloaded: u64,
+    pub speed_mbps: f64,
+    pub eta_seconds: u64,
+    pub status: String, // "downloading", "complete", "failed", "analyzing"
+}
+
+// Final download result
+#[derive(Debug, Serialize)]
+pub struct DownloadResult {
+    pub url: String,
+    pub filename: String,
+    pub success: bool,
+    pub error: Option<String>,
+    pub total_time_seconds: f64,
+    pub average_speed_mbps: f64,
+    pub file_size: u64,
+}
+
+// Statistics tracking for each download
+pub struct DownloadStats {
+    pub total_size: AtomicU64,
+    pub downloaded: AtomicU64,
+    pub start_time: Instant,
+    pub chunks_completed: AtomicU64,
+}
+
+impl DownloadStats {
+    pub fn new() -> Self {
+        Self {
+            total_size: AtomicU64::new(0),
+            downloaded: AtomicU64::new(0),
+            start_time: Instant::now(),
+            chunks_completed: AtomicU64::new(0),
+        }
+    }
+
+    pub fn speed_mbps(&self) -> f64 {
+        let elapsed = self.start_time.elapsed().as_secs_f64();
+        if elapsed > 0.0 {
+            let downloaded_mb = self.downloaded.load(Ordering::Relaxed) as f64 / (1024.0 * 1024.0);
+            downloaded_mb / elapsed
+        } else {
+            0.0
+        }
+    }
+
+    pub fn progress_percent(&self) -> f64 {
+        let total = self.total_size.load(Ordering::Relaxed);
+        let downloaded = self.downloaded.load(Ordering::Relaxed);
+        if total > 0 {
+            (downloaded as f64 / total as f64) * 100.0
+        } else {
+            0.0
+        }
+    }
+
+    pub fn eta_seconds(&self) -> u64 {
+        let speed = self.speed_mbps();
+        let remaining_mb = (self.total_size.load(Ordering::Relaxed) - self.downloaded.load(Ordering::Relaxed)) as f64 / (1024.0 * 1024.0);
+        if speed > 0.0 {
+            (remaining_mb / speed) as u64
+        } else {
+            0
+        }
+    }
+}
+
+pub struct FastDownloader {
+    client: Client,
+    config: DownloadConfig,
+}
+
+impl FastDownloader {
+    pub fn new(config: DownloadConfig) -> Result<Self, Box<dyn std::error::Error>> {
+        // Create optimized HTTP client with connection pooling
+        let client = Client::builder()
+            .timeout(Duration::from_secs(config.timeout_seconds))
+            .pool_max_idle_per_host(config.connections)
+            .pool_idle_timeout(Duration::from_secs(60))
+            .user_agent("FastDL-Core/1.0")
+            .build()?;
+
+        Ok(Self { client, config })
+    }
+
+    // Extract filename from URL or Content-Disposition header
+    fn extract_filename(&self, url: &str, response: &Response) -> String {
+        // Try Content-Disposition header first
+        if let Some(content_disp) = response.headers().get("content-disposition") {
+            if let Ok(disp_str) = content_disp.to_str() {
+                if let Some(filename_start) = disp_str.find("filename=") {
+                    let filename_part = &disp_str[filename_start + 9..];
+                    let filename = filename_part.trim_matches('"').trim_matches('\'');
+                    if !filename.is_empty() {
+                        return urlencoding::decode(filename).unwrap_or_default().to_string();
+                    }
+                }
+            }
+        }
+
+        // Fall back to URL path
+        if let Ok(parsed_url) = url::Url::parse(url) {
+            if let Some(segments) = parsed_url.path_segments() {
+                if let Some(last_segment) = segments.last() {
+                    if !last_segment.is_empty() {
+                        return urlencoding::decode(last_segment).unwrap_or_default().to_string();
+                    }
+                }
+            }
+        }
+
+        // Last resort: generate a name based on timestamp
+        format!("download_{}", std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs())
+    }
+
+    // Get file information and check range support
+    async fn get_file_info(&self, url: &str) -> Result<(u64, bool, String), Box<dyn std::error::Error>> {
+        let response = self.client.head(url).send().await?;
+        
+        // Get file size
+        let file_size = response
+            .headers()
+            .get("content-length")
+            .and_then(|v| v.to_str().ok())
+            .and_then(|v| v.parse::<u64>().ok())
+            .unwrap_or(0);
+
+        // Check range support
+        let supports_ranges = response
+            .headers()
+            .get("accept-ranges")
+            .and_then(|v| v.to_str().ok())
+            .map(|v| v == "bytes")
+            .unwrap_or(false);
+
+        // Extract filename
+        let filename = self.extract_filename(url, &response);
+
+        Ok((file_size, supports_ranges, filename))
+    }
+
+    // Download a specific byte range chunk
+    async fn download_chunk(
+        &self,
+        url: &str,
+        start: u64,
+        end: u64,
+        file_path: &PathBuf,
+        stats: Arc<DownloadStats>,
+        chunk_id: usize,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        for attempt in 0..self.config.retries {
+            match self.try_download_chunk(url, start, end, file_path, stats.clone(), chunk_id).await {
+                Ok(_) => {
+                    stats.chunks_completed.fetch_add(1, Ordering::Relaxed);
+                    return Ok(());
+                }
+                Err(e) => {
+                    if attempt < self.config.retries - 1 {
+                        if self.config.verbose {
+                            eprintln!("Chunk {} attempt {} failed: {}, retrying...", chunk_id, attempt + 1, e);
+                        }
+                        sleep(Duration::from_millis(1000 * (attempt as u64 + 1))).await;
+                    } else {
+                        return Err(e);
+                    }
+                }
+            }
+        }
+        unreachable!()
+    }
+
+    async fn try_download_chunk(
+        &self,
+        url: &str,
+        start: u64,
+        end: u64,
+        file_path: &PathBuf,
+        stats: Arc<DownloadStats>,
+        _chunk_id: usize,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let range_header = format!("bytes={}-{}", start, end);
+        let response = self.client
+            .get(url)
+            .header("Range", range_header)
+            .send()
+            .await?;
+
+        if !response.status().is_success() && response.status().as_u16() != 206 {
+            return Err(format!("HTTP error: {}", response.status()).into());
+        }
+
+        // Open file for writing at specific position
+        let mut file = AsyncFile::options()
+            .write(true)
+            .open(file_path)
+            .await?;
+        
+        file.seek(SeekFrom::Start(start)).await?;
+
+        // Download chunk data
+        let mut stream = response.bytes_stream();
+        use futures_util::StreamExt;
+        
+        while let Some(chunk_result) = stream.next().await {
+            let chunk = chunk_result?;
+            file.write_all(&chunk).await?;
+            stats.downloaded.fetch_add(chunk.len() as u64, Ordering::Relaxed);
+        }
+
+        file.flush().await?;
+        Ok(())
+    }
+
+    // Single-stream download for servers without range support
+    async fn download_single_stream(
+        &self,
+        url: &str,
+        file_path: &PathBuf,
+        stats: Arc<DownloadStats>,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let response = self.client.get(url).send().await?;
+        
+        if !response.status().is_success() {
+            return Err(format!("HTTP error: {}", response.status()).into());
+        }
+
+        let mut file = AsyncFile::create(file_path).await?;
+        let mut stream = response.bytes_stream();
+        use futures_util::StreamExt;
+
+        while let Some(chunk_result) = stream.next().await {
+            let chunk = chunk_result?;
+            file.write_all(&chunk).await?;
+            stats.downloaded.fetch_add(chunk.len() as u64, Ordering::Relaxed);
+        }
+
+        file.flush().await?;
+        Ok(())
+    }
+
+    // Main download function for a single file
+    pub async fn download_file(&self, url: &str) -> DownloadResult {
+        let start_time = Instant::now();
+        
+        // Send initial status
+        self.send_progress(url, "", 0, 0, 0.0, 0, "analyzing").await;
+
+        // Get file info
+        let (file_size, supports_ranges, filename) = match self.get_file_info(url).await {
+            Ok(info) => info,
+            Err(e) => {
+                return DownloadResult {
+                    url: url.to_string(),
+                    filename: "unknown".to_string(),
+                    success: false,
+                    error: Some(format!("Failed to get file info: {}", e)),
+                    total_time_seconds: start_time.elapsed().as_secs_f64(),
+                    average_speed_mbps: 0.0,
+                    file_size: 0,
+                };
+            }
+        };
+
+        let output_path = PathBuf::from(&self.config.output_dir).join(&filename);
+        
+        // Create output directory if needed
+        if let Some(parent) = output_path.parent() {
+            if let Err(e) = std::fs::create_dir_all(parent) {
+                return DownloadResult {
+                    url: url.to_string(),
+                    filename,
+                    success: false,
+                    error: Some(format!("Failed to create output directory: {}", e)),
+                    total_time_seconds: start_time.elapsed().as_secs_f64(),
+                    average_speed_mbps: 0.0,
+                    file_size,
+                };
+            }
+        }
+
+        let stats = Arc::new(DownloadStats::new());
+        stats.total_size.store(file_size, Ordering::Relaxed);
+
+        // Send download starting status
+        self.send_progress(url, &filename, file_size, 0, 0.0, 0, "downloading").await;
+
+        let result = if supports_ranges && file_size > (self.config.chunk_size_mb * 1024 * 1024) as u64 {
+            // Multi-connection download
+            self.download_with_ranges(url, &output_path, file_size, stats.clone()).await
+        } else {
+            // Single stream download
+            self.download_single_stream(url, &output_path, stats.clone()).await
+        };
+
+        let total_time = start_time.elapsed().as_secs_f64();
+        let downloaded = stats.downloaded.load(Ordering::Relaxed);
+        let avg_speed = if total_time > 0.0 {
+            (downloaded as f64 / (1024.0 * 1024.0)) / total_time
+        } else {
+            0.0
+        };
+
+        match result {
+            Ok(_) => {
+                self.send_progress(url, &filename, file_size, downloaded, avg_speed, 0, "complete").await;
+                DownloadResult {
+                    url: url.to_string(),
+                    filename,
+                    success: true,
+                    error: None,
+                    total_time_seconds: total_time,
+                    average_speed_mbps: avg_speed,
+                    file_size: downloaded,
+                }
+            }
+            Err(e) => {
+                self.send_progress(url, &filename, file_size, downloaded, avg_speed, 0, "failed").await;
+                // Clean up partial file
+                let _ = std::fs::remove_file(&output_path);
+                DownloadResult {
+                    url: url.to_string(),
+                    filename,
+                    success: false,
+                    error: Some(e.to_string()),
+                    total_time_seconds: total_time,
+                    average_speed_mbps: avg_speed,
+                    file_size: downloaded,
+                }
+            }
+        }
+    }
+
+    async fn download_with_ranges(
+        &self,
+        url: &str,
+        file_path: &PathBuf,
+        file_size: u64,
+        stats: Arc<DownloadStats>,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        // Pre-allocate file
+        {
+            let file = File::create(file_path)?;
+            file.set_len(file_size)?;
+        }
+
+        // Calculate chunk ranges
+        let chunk_size = file_size / self.config.connections as u64;
+        let mut chunk_ranges = Vec::new();
+        
+        for i in 0..self.config.connections {
+            let start = i as u64 * chunk_size;
+            let end = if i == self.config.connections - 1 {
+                file_size - 1
+            } else {
+                start + chunk_size - 1
+            };
+            chunk_ranges.push((start, end));
+        }
+
+        // Start progress monitoring
+        let progress_stats = stats.clone();
+        let progress_url = url.to_string();
+        let progress_filename = file_path.file_name().unwrap().to_string_lossy().to_string();
+        let progress_handle = tokio::spawn(async move {
+            loop {
+                let downloaded = progress_stats.downloaded.load(Ordering::Relaxed);
+                let speed = progress_stats.speed_mbps();
+                let eta = progress_stats.eta_seconds();
+                
+                // This would send progress to wrapper - simplified for core
+                // In real implementation, this would use IPC or stdout JSON
+                if downloaded > 0 {
+                    // Progress update logic here
+                }
+                
+                sleep(Duration::from_millis(500)).await;
+            }
+        });
+
+        // Download chunks concurrently
+        let semaphore = Arc::new(Semaphore::new(self.config.connections));
+        let mut handles = Vec::new();
+
+        for (i, (start, end)) in chunk_ranges.into_iter().enumerate() {
+            let client = self.client.clone();
+            let url = url.to_string();
+            let file_path = file_path.clone();
+            let stats = stats.clone();
+            let semaphore = semaphore.clone();
+
+            let handle = tokio::spawn(async move {
+                let _permit = semaphore.acquire().await.unwrap();
+                // Create a temporary downloader instance for this chunk
+                let downloader = FastDownloader {
+                    client,
+                    config: DownloadConfig {
+                        urls: vec![],
+                        output_dir: String::new(),
+                        connections: 1,
+                        chunk_size_mb: 1,
+                        timeout_seconds: 30,
+                        retries: 3,
+                        max_concurrent: 1,
+                        url_file: None,
+                        verbose: false,
+                    },
+                };
+                downloader.download_chunk(&url, start, end, &file_path, stats, i).await
+            });
+            handles.push(handle);
+        }
+
+        // Wait for all chunks to complete
+        let mut success = true;
+        for handle in handles {
+            if let Err(_) = handle.await? {
+                success = false;
+            }
+        }
+
+        progress_handle.abort();
+
+        if success {
+            Ok(())
+        } else {
+            Err("Some chunks failed to download".into())
+        }
+    }
+
+    // Send progress updates to wrapper (simplified - would use proper IPC)
+    async fn send_progress(&self, url: &str, filename: &str, total: u64, downloaded: u64, speed: f64, eta: u64, status: &str) {
+        let progress = DownloadProgress {
+            url: url.to_string(),
+            filename: filename.to_string(),
+            total_size: total,
+            downloaded,
+            speed_mbps: speed,
+            eta_seconds: eta,
+            status: status.to_string(),
+        };
+
+        // In real implementation, this would send JSON to stdout or use IPC
+        if self.config.verbose {
+            println!("{}", serde_json::to_string(&progress).unwrap_or_default());
+        }
+    }
+
+    // Download multiple files with concurrency control
+    pub async fn download_batch(&self, urls: Vec<String>) -> Vec<DownloadResult> {
+        let semaphore = Arc::new(Semaphore::new(self.config.max_concurrent));
+        let mut handles = Vec::new();
+
+        for url in urls {
+            let semaphore = semaphore.clone();
+            let downloader = self.clone_config();
+            
+            let handle = tokio::spawn(async move {
+                let _permit = semaphore.acquire().await.unwrap();
+                downloader.download_file(&url).await
+            });
+            handles.push(handle);
+        }
+
+        let mut results = Vec::new();
+        for handle in handles {
+            match handle.await {
+                Ok(result) => results.push(result),
+                Err(e) => results.push(DownloadResult {
+                    url: "unknown".to_string(),
+                    filename: "unknown".to_string(),
+                    success: false,
+                    error: Some(format!("Task failed: {}", e)),
+                    total_time_seconds: 0.0,
+                    average_speed_mbps: 0.0,
+                    file_size: 0,
+                }),
+            }
+        }
+
+        results
+    }
+
+    // Helper to clone downloader for concurrent operations
+    fn clone_config(&self) -> Self {
+        Self {
+            client: self.client.clone(),
+            config: DownloadConfig {
+                urls: self.config.urls.clone(),
+                output_dir: self.config.output_dir.clone(),
+                connections: self.config.connections,
+                chunk_size_mb: self.config.chunk_size_mb,
+                timeout_seconds: self.config.timeout_seconds,
+                retries: self.config.retries,
+                max_concurrent: self.config.max_concurrent,
+                url_file: self.config.url_file.clone(),
+                verbose: self.config.verbose,
+            },
+        }
+    }
+}
+
+// Main entry point
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let args: Vec<String> = env::args().collect();
+    
+    if args.len() < 2 {
+        eprintln!("Usage: fastdl-core <config-json>");
+        eprintln!("Example: fastdl-core '{\"urls\":[\"https://example.com/file.zip\"],\"output_dir\":\"./downloads\",\"connections\":8,\"chunk_size_mb\":1,\"timeout_seconds\":30,\"retries\":3,\"max_concurrent\":3,\"verbose\":true}'");
+        std::process::exit(1);
+    }
+
+    // Parse configuration from JSON argument
+    let config: DownloadConfig = serde_json::from_str(&args[1])
+        .map_err(|e| format!("Invalid JSON config: {}", e))?;
+
+    let downloader = FastDownloader::new(config)?;
+
+    // Determine what to download
+    let urls = if let Some(url_file) = &downloader.config.url_file {
+        // Read URLs from file
+        let file = File::open(url_file)?;
+        let reader = BufReader::new(file);
+        reader.lines()
+            .map(|line| line.unwrap_or_default())
+            .filter(|line| !line.trim().is_empty() && !line.trim().starts_with('#'))
+            .collect()
+    } else {
+        downloader.config.urls.clone()
+    };
+
+    if urls.is_empty() {
+        eprintln!("No URLs to download");
+        std::process::exit(1);
+    }
+
+    // Execute downloads
+    let results = if urls.len() == 1 {
+        vec![downloader.download_file(&urls[0]).await]
+    } else {
+        downloader.download_batch(urls).await
+    };
+
+    // Output final results as JSON
+    println!("{}", serde_json::to_string_pretty(&results)?);
+
+    // Exit with appropriate code
+    let success_count = results.iter().filter(|r| r.success).count();
+    if success_count == results.len() {
+        std::process::exit(0);
+    } else {
+        std::process::exit(1);
+    }
+}
+EOF
+    
+    # Build in release mode for maximum performance
+    show_spinner &
+    local spinner_pid=$!
+    
+    if cargo build --release >/dev/null 2>&1; then
+        kill $spinner_pid 2>/dev/null || true
+        wait $spinner_pid 2>/dev/null || true
+        log_success "Core engine built successfully"
+    else
+        kill $spinner_pid 2>/dev/null || true
+        wait $spinner_pid 2>/dev/null || true
+        log_error "Failed to build core engine"
+        exit 1
+    fi
+    
+    # Copy the binary to FastDL directory
+    mkdir -p "$FASTDL_DIR"
+    cp target/release/fastdl-core "$FASTDL_CORE"
+    chmod +x "$FASTDL_CORE"
+}
+
+# Initialize FastDL configuration
+init_config() {
+    log_info "Initializing FastDL configuration..."
+    
+    mkdir -p "$FASTDL_DIR"
+    mkdir -p "$DOWNLOADS_DIR"
+    
+    # Create default configuration
+    cat > "$FASTDL_CONFIG" << EOF
+{
+    "default_connections": 8,
+    "default_chunk_size_mb": 1,
+    "default_timeout_seconds": 30,
+    "default_retries": 3,
+    "default_max_concurrent": 3,
+    "downloads_directory": "$DOWNLOADS_DIR",
+    "verbose": false,
+    "auto_organize": true,
+    "resume_downloads": true
+}
+EOF
+    
+    log_success "Configuration initialized"
+}
+
+# Setup function - called on first run or when --setup is used
+setup_fastdl() {
+    log_header "FastDL Setup"
+    
+    log_info "Setting up FastDL v$FASTDL_VERSION for $(detect_system)"
+    
+    # Install dependencies
+    install_dependencies
+    
+    # Install Rust
+    install_rust
+    
+    # Build core
+    build_core
+    
+    # Initialize config
+    init_config
+    
+    # Create desktop entry on Linux
+    if [[ "$(uname -s)" == "Linux" ]] && [[ -d "$HOME/.local/share/applications" ]]; then
+        cat > "$HOME/.local/share/applications/fastdl.desktop" << EOF
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=FastDL
+Comment=High-Performance File Downloader
+Exec=$0
+Icon=folder-download
+Terminal=true
+Categories=Network;FileTransfer;
+EOF
+    fi
+    
+    log_success "FastDL setup completed successfully!"
+    echo
+    log_info "You can now run 'fastdl' from anywhere"
+    log_info "Downloads will be saved to: $DOWNLOADS_DIR"
+}
+
+# Check if FastDL is properly installed
+check_installation() {
+    if [[ ! -f "$FASTDL_CORE" ]] || [[ ! -f "$FASTDL_CONFIG" ]]; then
+        return 1
+    fi
+    return 0
+}
+
+# Load configuration
+load_config() {
+    if [[ -f "$FASTDL_CONFIG" ]]; then
+        # Parse JSON config (simple extraction for bash)
+        DEFAULT_CONNECTIONS=$(grep -o '"default_connections":[[:space:]]*[0-9]*' "$FASTDL_CONFIG" | grep -o '[0-9]*$' || echo "8")
+        DEFAULT_CHUNK_SIZE=$(grep -o '"default_chunk_size_mb":[[:space:]]*[0-9]*' "$FASTDL_CONFIG" | grep -o '[0-9]*$' || echo "1")
+        DEFAULT_TIMEOUT=$(grep -o '"default_timeout_seconds":[[:space:]]*[0-9]*' "$FASTDL_CONFIG" | grep -o '[0-9]*$' || echo "30")
+        DEFAULT_RETRIES=$(grep -o '"default_retries":[[:space:]]*[0-9]*' "$FASTDL_CONFIG" | grep -o '[0-9]*$' || echo "3")
+        DEFAULT_MAX_CONCURRENT=$(grep -o '"default_max_concurrent":[[:space:]]*[0-9]*' "$FASTDL_CONFIG" | grep -o '[0-9]*$' || echo "3")
+        DOWNLOADS_DIR=$(grep -o '"downloads_directory":[[:space:]]*"[^"]*"' "$FASTDL_CONFIG" | sed 's/.*"\([^"]*\)".*/\1/' || echo "$HOME/Downloads/FastDL")
+    else
+        # Fallback defaults
+        DEFAULT_CONNECTIONS=8
+        DEFAULT_CHUNK_SIZE=1
+        DEFAULT_TIMEOUT=30
+        DEFAULT_RETRIES=3
+        DEFAULT_MAX_CONCURRENT=3
+        DOWNLOADS_DIR="$HOME/Downloads/FastDL"
+    fi
+}
+
+# Validate URL
+is_valid_url() {
+    local url="$1"
+    if [[ "$url" =~ ^https?:// ]]; then
+        return 0
+    fi
+    return 1
+}
+
+# Format file size
+format_size() {
+    local size=$1
+    if [[ $size -gt 1073741824 ]]; then
+        echo "$(( size / 1073741824 )) GB"
+    elif [[ $size -gt 1048576 ]]; then
+        echo "$(( size / 1048576 )) MB"
+    elif [[ $size -gt 1024 ]]; then
+        echo "$(( size / 1024 )) KB"
+    else
+        echo "$size B"
+    fi
+}
+
+# Download single file
+download_single() {
+    local url="$1"
+    local output_dir="${2:-$DOWNLOADS_DIR}"
+    local connections="${3:-$DEFAULT_CONNECTIONS}"
+    local chunk_size="${4:-$DEFAULT_CHUNK_SIZE}"
+    local timeout="${5:-$DEFAULT_TIMEOUT}"
+    local retries="${6:-$DEFAULT_RETRIES}"
+    local verbose="${7:-false}"
+    
+    log_info "Starting download..."
+    log_info "URL: $url"
+    log_info "Output: $output_dir"
+    log_info "Connections: $connections"
+    
+    # Create JSON configuration for the core
+    local config=$(cat << EOF
+{
+    "urls": ["$url"],
+    "output_dir": "$output_dir",
+    "connections": $connections,
+    "chunk_size_mb": $chunk_size,
+    "timeout_seconds": $timeout,
+    "retries": $retries,
+    "max_concurrent": 1,
+    "verbose": $verbose
+}
+EOF
+)
+    
+    # Execute the core downloader
+    mkdir -p "$output_dir"
+    
+    if "$FASTDL_CORE" "$config"; then
+        log_success "Download completed successfully!"
+        log_info "File saved to: $output_dir"
+    else
+        log_error "Download failed"
+        return 1
+    fi
+}
+
+# Download from file list
+download_batch() {
+    local url_file="$1"
+    local output_dir="${2:-$DOWNLOADS_DIR}"
+    local connections="${3:-$DEFAULT_CONNECTIONS}"
+    local max_concurrent="${4:-$DEFAULT_MAX_CONCURRENT}"
+    local verbose="${5:-false}"
+    
+    if [[ ! -f "$url_file" ]]; then
+        log_error "URL file not found: $url_file"
+        return 1
+    fi
+    
+    local url_count=$(grep -c -v '^[[:space:]]*$\|^#' "$url_file" || echo "0")
+    
+    log_info "Starting batch download..."
+    log_info "URLs: $url_count"
+    log_info "Output: $output_dir"
+    log_info "Connections per file: $connections"
+    log_info "Concurrent downloads: $max_concurrent"
+    
+    # Create JSON configuration for the core
+    local config=$(cat << EOF
+{
+    "urls": [],
+    "output_dir": "$output_dir",
+    "connections": $connections,
+    "chunk_size_mb": $DEFAULT_CHUNK_SIZE,
+    "timeout_seconds": $DEFAULT_TIMEOUT,
+    "retries": $DEFAULT_RETRIES,
+    "max_concurrent": $max_concurrent,
+    "url_file": "$url_file",
+    "verbose": $verbose
+}
+EOF
+)
+    
+    # Execute the core downloader
+    mkdir -p "$output_dir"
+    
+    if "$FASTDL_CORE" "$config"; then
+        log_success "Batch download completed!"
+        log_info "Files saved to: $output_dir"
+    else
+        log_error "Batch download failed"
+        return 1
+    fi
+}
+
+# Interactive menu system
+show_main_menu() {
+    clear
+    echo -e "${CYAN}${BOLD}"
+    echo "  ╔═══════════════════════════════════════╗"
+    echo "  ║             FastDL v$FASTDL_VERSION              ║"
+    echo "  ║    High-Performance File Downloader   ║"
+    echo "  ╚═══════════════════════════════════════╝"
+    echo -e "${NC}"
+    echo
+    echo -e "${BOLD}Select an option:${NC}"
+    echo
+    echo "  1) Download Single File"
+    echo "  2) Download Multiple Files (from list)"
+    echo "  3) Configuration"
+    echo "  4) Download History"
+    echo "  5) Help & About"
+    echo "  6) Exit"
+    echo
+    echo -n "Enter your choice [1-6]: "
+}
+
+# Single file download menu
+single_download_menu() {
+    clear
+    log_header "Single File Download"
+    
+    echo -n "Enter URL: "
+    read -r url
+    
+    if ! is_valid_url "$url"; then
+        log_error "Invalid URL format"
+        echo "Press Enter to continue..."
+        read -r
+        return
+    fi
+    
+    echo
+    echo "Advanced options (press Enter for defaults):"
+    echo -n "Output directory [$DOWNLOADS_DIR]: "
+    read -r output_dir
+    output_dir="${output_dir:-$DOWNLOADS_DIR}"
+    
+    echo -n "Number of connections [$DEFAULT_CONNECTIONS]: "
+    read -r connections
+    connections="${connections:-$DEFAULT_CONNECTIONS}"
+    
+    echo -n "Verbose output? [y/N]: "
+    read -r verbose_input
+    local verbose="false"
+    if [[ "$verbose_input" =~ ^[Yy] ]]; then
+        verbose="true"
+    fi
+    
+    echo
+    download_single "$url" "$output_dir" "$connections" "$DEFAULT_CHUNK_SIZE" "$DEFAULT_TIMEOUT" "$DEFAULT_RETRIES" "$verbose"
+    
+    echo
+    echo "Press Enter to continue..."
+    read -r
+}
+
+# Batch download menu
+batch_download_menu() {
+    clear
+    log_header "Batch Download"
+    
+    echo "You can provide a file containing URLs (one per line)"
+    echo "Lines starting with # are treated as comments"
+    echo
+    echo -n "Enter path to URL file: "
+    read -r url_file
+    
+    if [[ ! -f "$url_file" ]]; then
+        log_error "File not found: $url_file"
+        echo "Press Enter to continue..."
+        read -r
+        return
+    fi
+    
+    echo
+    echo "Advanced options (press Enter for defaults):"
+    echo -n "Output directory [$DOWNLOADS_DIR]: "
+    read -r output_dir
+    output_dir="${output_dir:-$DOWNLOADS_DIR}"
+    
+    echo -n "Connections per file [$DEFAULT_CONNECTIONS]: "
+    read -r connections
+    connections="${connections:-$DEFAULT_CONNECTIONS}"
+    
+    echo -n "Max concurrent downloads [$DEFAULT_MAX_CONCURRENT]: "
+    read -r max_concurrent
+    max_concurrent="${max_concurrent:-$DEFAULT_MAX_CONCURRENT}"
+    
+    echo -n "Verbose output? [y/N]: "
+    read -r verbose_input
+    local verbose="false"
+    if [[ "$verbose_input" =~ ^[Yy] ]]; then
+        verbose="true"
+    fi
+    
+    echo
+    download_batch "$url_file" "$output_dir" "$connections" "$max_concurrent" "$verbose"
+    
+    echo
+    echo "Press Enter to continue..."
+    read -r
+}
+
+# Configuration menu
+config_menu() {
+    clear
+    log_header "Configuration"
+    
+    load_config
+    
+    echo "Current configuration:"
+    echo "  Default connections: $DEFAULT_CONNECTIONS"
+    echo "  Default chunk size: ${DEFAULT_CHUNK_SIZE}MB"
+    echo "  Default timeout: ${DEFAULT_TIMEOUT}s"
+    echo "  Default retries: $DEFAULT_RETRIES"
+    echo "  Max concurrent: $DEFAULT_MAX_CONCURRENT"
+    echo "  Downloads directory: $DOWNLOADS_DIR"
+    echo
+    echo "1) Change defaults"
+    echo "2) Open downloads directory"
+    echo "3) Reset to defaults"
+    echo "4) Back to main menu"
+    echo
+    echo -n "Enter your choice [1-4]: "
+    read -r choice
+    
+    case "$choice" in
+        1)
+            echo
+            echo "Enter new values (press Enter to keep current):"
+            
+            echo -n "Default connections [$DEFAULT_CONNECTIONS]: "
+            read -r new_connections
+            connections="${new_connections:-$DEFAULT_CONNECTIONS}"
+            
+            echo -n "Default chunk size MB [$DEFAULT_CHUNK_SIZE]: "
+            read -r new_chunk_size
+            chunk_size="${new_chunk_size:-$DEFAULT_CHUNK_SIZE}"
+            
+            echo -n "Default timeout seconds [$DEFAULT_TIMEOUT]: "
+            read -r new_timeout
+            timeout="${new_timeout:-$DEFAULT_TIMEOUT}"
+            
+            echo -n "Default retries [$DEFAULT_RETRIES]: "
+            read -r new_retries
+            retries="${new_retries:-$DEFAULT_RETRIES}"
+            
+            echo -n "Max concurrent downloads [$DEFAULT_MAX_CONCURRENT]: "
+            read -r new_max_concurrent
+            max_concurrent="${new_max_concurrent:-$DEFAULT_MAX_CONCURRENT}"
+            
+            # Update configuration file
+            cat > "$FASTDL_CONFIG" << EOF
+{
+    "default_connections": $connections,
+    "default_chunk_size_mb": $chunk_size,
+    "default_timeout_seconds": $timeout,
+    "default_retries": $retries,
+    "default_max_concurrent": $max_concurrent,
+    "downloads_directory": "$DOWNLOADS_DIR",
+    "verbose": false,
+    "auto_organize": true,
+    "resume_downloads": true
+}
+EOF
+            log_success "Configuration updated!"
+            ;;
+        2)
+            if command_exists xdg-open; then
+                xdg-open "$DOWNLOADS_DIR" >/dev/null 2>&1 &
+            elif command_exists open; then
+                open "$DOWNLOADS_DIR" >/dev/null 2>&1 &
+            else
+                log_info "Downloads directory: $DOWNLOADS_DIR"
+            fi
+            ;;
+        3)
+            init_config
+            log_success "Configuration reset to defaults!"
+            ;;
+        4)
+            return
+            ;;
+    esac
+    
+    echo
+    echo "Press Enter to continue..."
+    read -r
+}
+
+# Help menu
+help_menu() {
+    clear
+    log_header "Help & About"
+    
+    echo -e "${BOLD}FastDL v$FASTDL_VERSION${NC}"
+    echo "High-Performance Cross-Platform File Downloader"
+    echo
+    echo -e "${BOLD}Features:${NC}"
+    echo "  • Multi-connection downloads for maximum speed"
+    echo "  • Concurrent downloading of multiple files"
+    echo "  • Automatic resume of interrupted downloads"
+    echo "  • Smart chunk-based downloading"
+    echo "  • Cross-platform support (Linux, macOS, Windows)"
+    echo "  • Built with Rust for maximum performance"
+    echo
+    echo -e "${BOLD}Command Line Usage:${NC}"
+    echo "  fastdl                    - Interactive menu (current mode)"
+    echo "  fastdl <url>              - Download single file"
+    echo "  fastdl --file <file>      - Download from URL list"
+    echo "  fastdl --setup            - Run setup again"
+    echo "  fastdl --help             - Show help"
+    echo
+    echo -e "${BOLD}Configuration:${NC}"
+    echo "  Config file: $FASTDL_CONFIG"
+    echo "  Downloads:   $DOWNLOADS_DIR"
+    echo "  Core binary: $FASTDL_CORE"
+    echo
+    echo -e "${BOLD}URL List Format:${NC}"
+    echo "  One URL per line"
+    echo "  Lines starting with # are comments"
+    echo "  Empty lines are ignored"
+    echo
+    echo "Press Enter to continue..."
+    read -r
+}
+
+# Command line argument handling
+handle_args() {
+    case "${1:-}" in
+        --setup)
+            setup_fastdl
+            exit 0
+            ;;
+        --help|-h)
+            help_menu
+            exit 0
+            ;;
+        --file|-f)
+            if [[ -z "${2:-}" ]]; then
+                log_error "Please specify a file path"
+                exit 1
+            fi
+            load_config
+            download_batch "$2"
+            exit $?
+            ;;
+        http://*|https://*)
+            load_config
+            download_single "$1"
+            exit $?
+            ;;
+        "")
+            # No arguments - run interactive mode
+            ;;
+        *)
+            echo "FastDL v$FASTDL_VERSION - High-Performance File Downloader"
+            echo
+            echo "Usage:"
+            echo "  $0                    - Interactive menu"
+            echo "  $0 <url>              - Download single file"
+            echo "  $0 --file <file>      - Download from URL list"
+            echo "  $0 --setup            - Run setup"
+            echo "  $0 --help             - Show help"
+            exit 1
+            ;;
+    esac
+}
+
+# Main interactive loop
+interactive_mode() {
+    while true; do
+        show_main_menu
+        read -r choice
+        
+        case "$choice" in
+            1)
+                single_download_menu
+                ;;
+            2)
+                batch_download_menu
+                ;;
+            3)
+                config_menu
+                ;;
+            4)
+                # Download history - placeholder for future implementation
+                clear
+                log_header "Download History"
+                echo "Feature coming soon!"
+                echo
+                echo "Press Enter to continue..."
+                read -r
+                ;;
+            5)
+                help_menu
+                ;;
+            6)
+                echo
+                log_info "Thanks for using FastDL!"
+                exit 0
+                ;;
+            *)
+                echo
+                log_error "Invalid choice. Please enter 1-6."
+                sleep 1
+                ;;
+        esac
+    done
+}
+
+# Main execution
+main() {
+    # Handle command line arguments first
+    handle_args "$@"
+    
+    # Check if FastDL is installed
+    if ! check_installation; then
+        log_header "FastDL First-Time Setup Required"
+        echo "FastDL needs to be set up before first use."
+        echo "This will:"
+        echo "  • Install Rust toolchain (if needed)"
+        echo "  • Install system dependencies"
+        echo "  • Build the high-performance core engine"
+        echo "  • Create configuration files"
+        echo
+        echo -n "Proceed with setup? [Y/n]: "
+        read -r setup_choice
+        
+        if [[ ! "$setup_choice" =~ ^[Nn] ]]; then
+            setup_fastdl
+        else
+            log_error "Setup cancelled. FastDL cannot run without setup."
+            exit 1
+        fi
+    fi
+    
+    # Load configuration
+    load_config
+    
+    # Start interactive mode
+    interactive_mode
+}
+
+# Execute main function with all arguments
+main "$@"
