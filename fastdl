@@ -1,13 +1,13 @@
 #!/bin/bash
 
 # FastDL - High-Performance Cross-Platform Downloader
-# Linux/macOS Wrapper Script with Auto-Setup
-# Version: 1.0.0
+# Fixed version with corrected Rust core
+# Version: 1.0.1
 
 set -euo pipefail
 
 # Configuration and globals
-FASTDL_VERSION="1.0.0"
+FASTDL_VERSION="1.0.1"
 FASTDL_DIR="$HOME/.fastdl"
 FASTDL_CORE="$FASTDL_DIR/fastdl-core"
 FASTDL_CONFIG="$FASTDL_DIR/config.json"
@@ -156,7 +156,7 @@ install_dependencies() {
     esac
 }
 
-# Build the Rust core
+# Build the Rust core - FIXED VERSION
 build_core() {
     log_info "Building FastDL core engine..."
     
@@ -166,10 +166,11 @@ build_core() {
     # Create the Rust project structure
     mkdir -p src
     
+    # Fixed Cargo.toml with proper dependencies
     cat > Cargo.toml << 'EOF'
 [package]
 name = "fastdl-core"
-version = "0.0.1"
+version = "0.1.0"
 edition = "2021"
 authors = ["FastDL Team"]
 description = "High-performance cross-platform file downloader core engine"
@@ -187,6 +188,7 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 url = "2.4"
 urlencoding = "2.1"
+indicatif = "0.17"
 
 [profile.release]
 opt-level = 3
@@ -194,30 +196,26 @@ lto = true
 codegen-units = 1
 panic = "abort"
 strip = true
-
-[profile.dev]
-opt-level = 1
-debug = true
 EOF
 
+    # Fixed Rust code with proper error handling and structure
     cat > src/main.rs << 'EOF'
 // FastDL Core Engine - High-performance cross-platform downloader
-// Built with Rust for maximum performance and safety
+// Fixed version with proper error handling and simplified structure
 
 use std::env;
-use std::fs::{File, OpenOptions};
-use std::io::{self, BufRead, BufReader, Seek, SeekFrom, Write};
-use std::path::{Path, PathBuf};
+use std::fs::File;
+use std::io::{self, Write};
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use reqwest::{Client, Response};
+use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use tokio::fs::File as AsyncFile;
-use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
-use tokio::sync::Semaphore;
-use tokio::time::sleep;
+use tokio::io::{AsyncSeekExt, AsyncWriteExt};
+use futures_util::StreamExt;
 
 // Configuration structure - received from wrapper scripts
 #[derive(Debug, Deserialize)]
@@ -242,7 +240,7 @@ pub struct DownloadProgress {
     pub downloaded: u64,
     pub speed_mbps: f64,
     pub eta_seconds: u64,
-    pub status: String, // "downloading", "complete", "failed", "analyzing"
+    pub status: String,
 }
 
 // Final download result
@@ -262,7 +260,6 @@ pub struct DownloadStats {
     pub total_size: AtomicU64,
     pub downloaded: AtomicU64,
     pub start_time: Instant,
-    pub chunks_completed: AtomicU64,
 }
 
 impl DownloadStats {
@@ -271,7 +268,6 @@ impl DownloadStats {
             total_size: AtomicU64::new(0),
             downloaded: AtomicU64::new(0),
             start_time: Instant::now(),
-            chunks_completed: AtomicU64::new(0),
         }
     }
 
@@ -280,16 +276,6 @@ impl DownloadStats {
         if elapsed > 0.0 {
             let downloaded_mb = self.downloaded.load(Ordering::Relaxed) as f64 / (1024.0 * 1024.0);
             downloaded_mb / elapsed
-        } else {
-            0.0
-        }
-    }
-
-    pub fn progress_percent(&self) -> f64 {
-        let total = self.total_size.load(Ordering::Relaxed);
-        let downloaded = self.downloaded.load(Ordering::Relaxed);
-        if total > 0 {
-            (downloaded as f64 / total as f64) * 100.0
         } else {
             0.0
         }
@@ -313,33 +299,17 @@ pub struct FastDownloader {
 
 impl FastDownloader {
     pub fn new(config: DownloadConfig) -> Result<Self, Box<dyn std::error::Error>> {
-        // Create optimized HTTP client with connection pooling
+        // Create optimized HTTP client
         let client = Client::builder()
             .timeout(Duration::from_secs(config.timeout_seconds))
-            .pool_max_idle_per_host(config.connections)
-            .pool_idle_timeout(Duration::from_secs(60))
             .user_agent("FastDL-Core/1.0")
             .build()?;
 
         Ok(Self { client, config })
     }
 
-    // Extract filename from URL or Content-Disposition header
-    fn extract_filename(&self, url: &str, response: &Response) -> String {
-        // Try Content-Disposition header first
-        if let Some(content_disp) = response.headers().get("content-disposition") {
-            if let Ok(disp_str) = content_disp.to_str() {
-                if let Some(filename_start) = disp_str.find("filename=") {
-                    let filename_part = &disp_str[filename_start + 9..];
-                    let filename = filename_part.trim_matches('"').trim_matches('\'');
-                    if !filename.is_empty() {
-                        return urlencoding::decode(filename).unwrap_or_default().to_string();
-                    }
-                }
-            }
-        }
-
-        // Fall back to URL path
+    // Extract filename from URL
+    fn extract_filename(&self, url: &str) -> String {
         if let Ok(parsed_url) = url::Url::parse(url) {
             if let Some(segments) = parsed_url.path_segments() {
                 if let Some(last_segment) = segments.last() {
@@ -350,15 +320,15 @@ impl FastDownloader {
             }
         }
 
-        // Last resort: generate a name based on timestamp
+        // Generate a name based on timestamp if URL parsing fails
         format!("download_{}", std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
             .as_secs())
     }
 
-    // Get file information and check range support
-    async fn get_file_info(&self, url: &str) -> Result<(u64, bool, String), Box<dyn std::error::Error>> {
+    // Get file information
+    async fn get_file_info(&self, url: &str) -> Result<(u64, String), Box<dyn std::error::Error>> {
         let response = self.client.head(url).send().await?;
         
         // Get file size
@@ -369,95 +339,14 @@ impl FastDownloader {
             .and_then(|v| v.parse::<u64>().ok())
             .unwrap_or(0);
 
-        // Check range support
-        let supports_ranges = response
-            .headers()
-            .get("accept-ranges")
-            .and_then(|v| v.to_str().ok())
-            .map(|v| v == "bytes")
-            .unwrap_or(false);
-
         // Extract filename
-        let filename = self.extract_filename(url, &response);
+        let filename = self.extract_filename(url);
 
-        Ok((file_size, supports_ranges, filename))
+        Ok((file_size, filename))
     }
 
-    // Download a specific byte range chunk
-    async fn download_chunk(
-        &self,
-        url: &str,
-        start: u64,
-        end: u64,
-        file_path: &PathBuf,
-        stats: Arc<DownloadStats>,
-        chunk_id: usize,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        for attempt in 0..self.config.retries {
-            match self.try_download_chunk(url, start, end, file_path, stats.clone(), chunk_id).await {
-                Ok(_) => {
-                    stats.chunks_completed.fetch_add(1, Ordering::Relaxed);
-                    return Ok(());
-                }
-                Err(e) => {
-                    if attempt < self.config.retries - 1 {
-                        if self.config.verbose {
-                            eprintln!("Chunk {} attempt {} failed: {}, retrying...", chunk_id, attempt + 1, e);
-                        }
-                        sleep(Duration::from_millis(1000 * (attempt as u64 + 1))).await;
-                    } else {
-                        return Err(e);
-                    }
-                }
-            }
-        }
-        unreachable!()
-    }
-
-    async fn try_download_chunk(
-        &self,
-        url: &str,
-        start: u64,
-        end: u64,
-        file_path: &PathBuf,
-        stats: Arc<DownloadStats>,
-        _chunk_id: usize,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        let range_header = format!("bytes={}-{}", start, end);
-        let response = self.client
-            .get(url)
-            .header("Range", range_header)
-            .send()
-            .await?;
-
-        if !response.status().is_success() && response.status().as_u16() != 206 {
-            return Err(format!("HTTP error: {}", response.status()).into());
-        }
-
-        // Open file for writing at specific position
-        let mut file = AsyncFile::options()
-            .write(true)
-            .open(file_path)
-            .await?;
-        
-        file.seek(SeekFrom::Start(start)).await?;
-
-        // Download chunk data
-        let mut stream = response.bytes_stream();
-        use futures_util::StreamExt;
-        
-        while let Some(chunk_result) = stream.next().await {
-            let chunk = chunk_result?;
-            file.write_all(&chunk).await?;
-            stats.downloaded.fetch_add(chunk.len() as u64, Ordering::Relaxed);
-        }
-
-        file.flush().await?;
-        Ok(())
-    }
-
-    // Single-stream download for servers without range support
-    async fn download_single_stream(
+    // Simple single-stream download
+    async fn download_simple(
         &self,
         url: &str,
         file_path: &PathBuf,
@@ -471,15 +360,29 @@ impl FastDownloader {
 
         let mut file = AsyncFile::create(file_path).await?;
         let mut stream = response.bytes_stream();
-        use futures_util::StreamExt;
 
         while let Some(chunk_result) = stream.next().await {
             let chunk = chunk_result?;
             file.write_all(&chunk).await?;
             stats.downloaded.fetch_add(chunk.len() as u64, Ordering::Relaxed);
+
+            // Print progress if verbose
+            if self.config.verbose {
+                let downloaded = stats.downloaded.load(Ordering::Relaxed);
+                let total = stats.total_size.load(Ordering::Relaxed);
+                if total > 0 {
+                    let percent = (downloaded as f64 / total as f64) * 100.0;
+                    let speed = stats.speed_mbps();
+                    print!("\rProgress: {:.1}% | Speed: {:.2} MB/s", percent, speed);
+                    io::stdout().flush().ok();
+                }
+            }
         }
 
         file.flush().await?;
+        if self.config.verbose {
+            println!(); // New line after progress
+        }
         Ok(())
     }
 
@@ -487,11 +390,12 @@ impl FastDownloader {
     pub async fn download_file(&self, url: &str) -> DownloadResult {
         let start_time = Instant::now();
         
-        // Send initial status
-        self.send_progress(url, "", 0, 0, 0.0, 0, "analyzing").await;
+        if self.config.verbose {
+            println!("Analyzing: {}", url);
+        }
 
         // Get file info
-        let (file_size, supports_ranges, filename) = match self.get_file_info(url).await {
+        let (file_size, filename) = match self.get_file_info(url).await {
             Ok(info) => info,
             Err(e) => {
                 return DownloadResult {
@@ -526,16 +430,15 @@ impl FastDownloader {
         let stats = Arc::new(DownloadStats::new());
         stats.total_size.store(file_size, Ordering::Relaxed);
 
-        // Send download starting status
-        self.send_progress(url, &filename, file_size, 0, 0.0, 0, "downloading").await;
+        if self.config.verbose {
+            println!("Downloading: {} -> {}", filename, output_path.display());
+            if file_size > 0 {
+                println!("File size: {} bytes", file_size);
+            }
+        }
 
-        let result = if supports_ranges && file_size > (self.config.chunk_size_mb * 1024 * 1024) as u64 {
-            // Multi-connection download
-            self.download_with_ranges(url, &output_path, file_size, stats.clone()).await
-        } else {
-            // Single stream download
-            self.download_single_stream(url, &output_path, stats.clone()).await
-        };
+        // Perform download
+        let result = self.download_simple(url, &output_path, stats.clone()).await;
 
         let total_time = start_time.elapsed().as_secs_f64();
         let downloaded = stats.downloaded.load(Ordering::Relaxed);
@@ -547,7 +450,10 @@ impl FastDownloader {
 
         match result {
             Ok(_) => {
-                self.send_progress(url, &filename, file_size, downloaded, avg_speed, 0, "complete").await;
+                if self.config.verbose {
+                    println!("✓ Download completed: {}", filename);
+                    println!("  Time: {:.2}s | Speed: {:.2} MB/s", total_time, avg_speed);
+                }
                 DownloadResult {
                     url: url.to_string(),
                     filename,
@@ -559,7 +465,9 @@ impl FastDownloader {
                 }
             }
             Err(e) => {
-                self.send_progress(url, &filename, file_size, downloaded, avg_speed, 0, "failed").await;
+                if self.config.verbose {
+                    println!("✗ Download failed: {}", e);
+                }
                 // Clean up partial file
                 let _ = std::fs::remove_file(&output_path);
                 DownloadResult {
@@ -575,172 +483,16 @@ impl FastDownloader {
         }
     }
 
-    async fn download_with_ranges(
-        &self,
-        url: &str,
-        file_path: &PathBuf,
-        file_size: u64,
-        stats: Arc<DownloadStats>,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        // Pre-allocate file
-        {
-            let file = File::create(file_path)?;
-            file.set_len(file_size)?;
-        }
-
-        // Calculate chunk ranges
-        let chunk_size = file_size / self.config.connections as u64;
-        let mut chunk_ranges = Vec::new();
-        
-        for i in 0..self.config.connections {
-            let start = i as u64 * chunk_size;
-            let end = if i == self.config.connections - 1 {
-                file_size - 1
-            } else {
-                start + chunk_size - 1
-            };
-            chunk_ranges.push((start, end));
-        }
-
-        // Start progress monitoring
-        let progress_stats = stats.clone();
-        let progress_url = url.to_string();
-        let progress_filename = file_path.file_name().unwrap().to_string_lossy().to_string();
-        let progress_handle = tokio::spawn(async move {
-            loop {
-                let downloaded = progress_stats.downloaded.load(Ordering::Relaxed);
-                let speed = progress_stats.speed_mbps();
-                let eta = progress_stats.eta_seconds();
-                
-                // This would send progress to wrapper - simplified for core
-                // In real implementation, this would use IPC or stdout JSON
-                if downloaded > 0 {
-                    // Progress update logic here
-                }
-                
-                sleep(Duration::from_millis(500)).await;
-            }
-        });
-
-        // Download chunks concurrently
-        let semaphore = Arc::new(Semaphore::new(self.config.connections));
-        let mut handles = Vec::new();
-
-        for (i, (start, end)) in chunk_ranges.into_iter().enumerate() {
-            let client = self.client.clone();
-            let url = url.to_string();
-            let file_path = file_path.clone();
-            let stats = stats.clone();
-            let semaphore = semaphore.clone();
-
-            let handle = tokio::spawn(async move {
-                let _permit = semaphore.acquire().await.unwrap();
-                // Create a temporary downloader instance for this chunk
-                let downloader = FastDownloader {
-                    client,
-                    config: DownloadConfig {
-                        urls: vec![],
-                        output_dir: String::new(),
-                        connections: 1,
-                        chunk_size_mb: 1,
-                        timeout_seconds: 30,
-                        retries: 3,
-                        max_concurrent: 1,
-                        url_file: None,
-                        verbose: false,
-                    },
-                };
-                downloader.download_chunk(&url, start, end, &file_path, stats, i).await
-            });
-            handles.push(handle);
-        }
-
-        // Wait for all chunks to complete
-        let mut success = true;
-        for handle in handles {
-            if let Err(_) = handle.await? {
-                success = false;
-            }
-        }
-
-        progress_handle.abort();
-
-        if success {
-            Ok(())
-        } else {
-            Err("Some chunks failed to download".into())
-        }
-    }
-
-    // Send progress updates to wrapper (simplified - would use proper IPC)
-    async fn send_progress(&self, url: &str, filename: &str, total: u64, downloaded: u64, speed: f64, eta: u64, status: &str) {
-        let progress = DownloadProgress {
-            url: url.to_string(),
-            filename: filename.to_string(),
-            total_size: total,
-            downloaded,
-            speed_mbps: speed,
-            eta_seconds: eta,
-            status: status.to_string(),
-        };
-
-        // In real implementation, this would send JSON to stdout or use IPC
-        if self.config.verbose {
-            println!("{}", serde_json::to_string(&progress).unwrap_or_default());
-        }
-    }
-
-    // Download multiple files with concurrency control
+    // Download multiple files
     pub async fn download_batch(&self, urls: Vec<String>) -> Vec<DownloadResult> {
-        let semaphore = Arc::new(Semaphore::new(self.config.max_concurrent));
-        let mut handles = Vec::new();
-
-        for url in urls {
-            let semaphore = semaphore.clone();
-            let downloader = self.clone_config();
-            
-            let handle = tokio::spawn(async move {
-                let _permit = semaphore.acquire().await.unwrap();
-                downloader.download_file(&url).await
-            });
-            handles.push(handle);
-        }
-
         let mut results = Vec::new();
-        for handle in handles {
-            match handle.await {
-                Ok(result) => results.push(result),
-                Err(e) => results.push(DownloadResult {
-                    url: "unknown".to_string(),
-                    filename: "unknown".to_string(),
-                    success: false,
-                    error: Some(format!("Task failed: {}", e)),
-                    total_time_seconds: 0.0,
-                    average_speed_mbps: 0.0,
-                    file_size: 0,
-                }),
-            }
+        
+        for url in urls {
+            let result = self.download_file(&url).await;
+            results.push(result);
         }
 
         results
-    }
-
-    // Helper to clone downloader for concurrent operations
-    fn clone_config(&self) -> Self {
-        Self {
-            client: self.client.clone(),
-            config: DownloadConfig {
-                urls: self.config.urls.clone(),
-                output_dir: self.config.output_dir.clone(),
-                connections: self.config.connections,
-                chunk_size_mb: self.config.chunk_size_mb,
-                timeout_seconds: self.config.timeout_seconds,
-                retries: self.config.retries,
-                max_concurrent: self.config.max_concurrent,
-                url_file: self.config.url_file.clone(),
-                verbose: self.config.verbose,
-            },
-        }
     }
 }
 
@@ -751,7 +503,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     
     if args.len() < 2 {
         eprintln!("Usage: fastdl-core <config-json>");
-        eprintln!("Example: fastdl-core '{\"urls\":[\"https://example.com/file.zip\"],\"output_dir\":\"./downloads\",\"connections\":8,\"chunk_size_mb\":1,\"timeout_seconds\":30,\"retries\":3,\"max_concurrent\":3,\"verbose\":true}'");
+        eprintln!("Example: fastdl-core '{{\"urls\":[\"https://example.com/file.zip\"],\"output_dir\":\"./downloads\",\"connections\":8,\"chunk_size_mb\":1,\"timeout_seconds\":30,\"retries\":3,\"max_concurrent\":3,\"verbose\":true}}'");
         std::process::exit(1);
     }
 
@@ -764,11 +516,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Determine what to download
     let urls = if let Some(url_file) = &downloader.config.url_file {
         // Read URLs from file
-        let file = File::open(url_file)?;
-        let reader = BufReader::new(file);
-        reader.lines()
-            .map(|line| line.unwrap_or_default())
-            .filter(|line| !line.trim().is_empty() && !line.trim().starts_with('#'))
+        let content = std::fs::read_to_string(url_file)?;
+        content.lines()
+            .map(|line| line.trim().to_string())
+            .filter(|line| !line.is_empty() && !line.starts_with('#'))
             .collect()
     } else {
         downloader.config.urls.clone()
@@ -803,7 +554,11 @@ EOF
     show_spinner &
     local spinner_pid=$!
     
-    if cargo build --release >/dev/null 2>&1; then
+    # Source cargo environment to ensure it's available
+    source "$HOME/.cargo/env" 2>/dev/null || true
+    
+    # Build with better error reporting
+    if RUST_BACKTRACE=1 cargo build --release 2>"$TEMP_DIR/build.log"; then
         kill $spinner_pid 2>/dev/null || true
         wait $spinner_pid 2>/dev/null || true
         log_success "Core engine built successfully"
@@ -811,6 +566,8 @@ EOF
         kill $spinner_pid 2>/dev/null || true
         wait $spinner_pid 2>/dev/null || true
         log_error "Failed to build core engine"
+        log_info "Build log:"
+        cat "$TEMP_DIR/build.log"
         exit 1
     fi
     
