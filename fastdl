@@ -170,7 +170,7 @@ build_core() {
 [package]
 name = "fastdl-core"
 version = "0.0.1"
-edition = "2030"
+edition = "2021"
 authors = ["FastDL Team"]
 description = "High-performance cross-platform file downloader core engine"
 license = "MIT"
