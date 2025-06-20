@@ -1,13 +1,12 @@
 #!/bin/bash
 
 # FastDL - High-Performance Cross-Platform Downloader
-# Fixed version with corrected Rust core
-# Version: 1.0.1
+# Version: 0.0.1
 
 set -euo pipefail
 
 # Configuration and globals
-FASTDL_VERSION="1.0.1"
+FASTDL_VERSION="0.0.1"
 FASTDL_DIR="$HOME/.fastdl"
 FASTDL_CORE="$FASTDL_DIR/fastdl-core"
 FASTDL_CONFIG="$FASTDL_DIR/config.json"
@@ -789,8 +788,9 @@ show_main_menu() {
     clear
     echo -e "${CYAN}${BOLD}"
     echo "  ╔═══════════════════════════════════════╗"
-    echo "  ║             FastDL v$FASTDL_VERSION              ║"
+    echo "  ║        FastDL v$FASTDL_VERSION        ║"
     echo "  ║    High-Performance File Downloader   ║"
+    echo "  ║  Engineered by 0xb0rn3 | Ig: theehiv3 ║"
     echo "  ╚═══════════════════════════════════════╝"
     echo -e "${NC}"
     echo
