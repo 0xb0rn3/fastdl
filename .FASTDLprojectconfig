@@ -1,0 +1,37 @@
+[package]
+name = "fastdl-core"
+version = "0.1.0"
+edition = "2021"
+authors = ["FastDL Team"]
+description = "High-performance cross-platform file downloader core engine"
+license = "MIT"
+
+# This creates a binary executable named fastdl-core
+[[bin]]
+name = "fastdl-core"
+path = "src/main.rs"
+
+[dependencies]
+# Async runtime - provides the foundation for concurrent operations
+tokio = { version = "1.35", features = ["full"] }
+# Utilities for working with async streams and futures
+futures-util = "0.3"
+# HTTP client library with streaming support
+reqwest = { version = "0.11", features = ["stream", "json"] }
+# JSON serialization/deserialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+# URL parsing and manipulation
+url = "2.4"
+# URL encoding/decoding utilities
+urlencoding = "2.1"
+# Progress bar library (though not actively used in this version)
+indicatif = "0.17"
+
+# Release profile optimizations for maximum performance
+[profile.release]
+opt-level = 3        # Maximum optimization level
+lto = true          # Link-time optimization
+codegen-units = 1   # Use single codegen unit for better optimization
+panic = "abort"     # Abort on panic rather than unwinding (smaller binary)
+strip = true        # Strip debug symbols from final binary
