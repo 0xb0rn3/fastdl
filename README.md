@@ -45,14 +45,7 @@
 
 ## 📥 Installation
 
-### 🔥 One-Line Install
-
-```bash
-curl -sSL https://raw.githubusercontent.com/0xb0rn3/fastdl/main/install.sh | bash
 ```
-
-### 📋 Manual Installation
-
 1. **Clone the repository**
    ```bash
    git clone https://github.com/0xb0rn3/fastdl.git
