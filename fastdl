@@ -1,1896 +1,1512 @@
 #!/usr/bin/env bash
 
-# VM Lab Isolation Setup Script
-# Author: 0xbv1 | 0xb0rn3
-# Repository: github.com/0xb0rn3/Qemu-pentest
-# Description: Automated setup for isolated VM environments for penetration testing
+# FastDL - High-Performance Cross-Platform Downloader
+# Version: 0.0.1
 
 set -euo pipefail
 
-# Configuration
-SCRIPT_VERSION="1.4.0" # Updated version with enhanced networking
-LOG_FILE="/tmp/vm-isolation-setup.log"
-BACKUP_DIR="/tmp/vm-backups"
-DEFAULT_VLAN=100
-DEFAULT_BRIDGE="br0"
+# Configuration and globals
+FASTDL_VERSION="0.0.1"
+FASTDL_DIR="$HOME/.fastdl"
+FASTDL_CORE="$FASTDL_DIR/fastdl-core"
+FASTDL_CONFIG="$FASTDL_DIR/config.json"
+DOWNLOADS_DIR="$HOME/Downloads/FastDL"
+TEMP_DIR="/tmp/fastdl-$$"
 
-# Color codes for output
+# Colors for beautiful output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
+PURPLE='\033[0;35m'
+CYAN='\033[0;36m'
+BOLD='\033[1m'
 NC='\033[0m' # No Color
 
-# Supported USB WiFi adapters database
-declare -A ADAPTERS=(
-    ["0e8d:7612"]="MediaTek MT7612U:yes:yes:recommended"
-    ["0bda:8812"]="Realtek RTL8812AU:yes:yes:good"
-    ["0bda:b812"]="Realtek RTL88x2bu:yes:limited:ok"
-    ["148f:7601"]="Ralink MT7601U:yes:no:basic"
-    ["0cf3:9271"]="Atheros AR9271:yes:yes:good"
-    ["2357:0105"]="TP-Link AC600:yes:yes:good"
-)
-
-# Global variables
-VM_NAME=""
-USB_VENDOR=""
-USB_PRODUCT=""
-HOST_INTERFACE=""
-VLAN_ID="$DEFAULT_VLAN"
-BRIDGE_NAME="$DEFAULT_BRIDGE"
-PERSISTENT=false
-DRY_RUN=false
-VERBOSE=false
-CREATE_NEW_VM=false
-ISO_PATH=""
-VM_MEMORY=""
-VM_CORES=""
-VM_DISK_SIZE=""
-VM_OS_VARIANT="linux2022"  # Default OS variant
-NETWORK_TOPOLOGY=""
-SECURITY_LEVEL=""
-BRIDGE_NAME_SECONDARY=""
-
-# Logging function
-log() {
-    echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" >> "$LOG_FILE"
-    if [[ "$VERBOSE" == true ]]; then
-        echo -e "${BLUE}[LOG]${NC} $1"
-    fi
-}
-
-# Print functions
-print_info() {
+# Logging functions
+log_info() {
     echo -e "${BLUE}[INFO]${NC} $1"
-    log "INFO: $1"
 }
 
-print_success() {
+log_success() {
     echo -e "${GREEN}[SUCCESS]${NC} $1"
-    log "SUCCESS: $1"
 }
 
-print_warning() {
+log_warning() {
     echo -e "${YELLOW}[WARNING]${NC} $1"
-    log "WARNING: $1"
 }
 
-print_error() {
+log_error() {
     echo -e "${RED}[ERROR]${NC} $1"
-    log "ERROR: $1"
 }
 
-# Help function
-show_help() {
-    cat << EOF
-VM Lab Isolation Setup Script v$SCRIPT_VERSION
-Author: 0xbv1 | 0xb0rn3 (github.com/0xb0rn3/Qemu-pentest)
-
-USAGE:
-    $0 [OPTIONS]
-
-OPTIONS:
-    --vm NAME               Specify VM name directly
-    --create-vm             Create new VM from ISO
-    --iso PATH              Path to ISO file for new VM creation
-    --download-iso          Prompt to download an ISO automatically
-    --adapter VENDOR:PRODUCT Specify USB adapter (e.g., 0e8d:7612)
-    --vlan ID               Custom VLAN ID (default: 100)
-    --interface NAME        Host interface to bridge
-    --bridge NAME           Bridge name (default: br0)
-    --memory SIZE           VM memory in MB (for new VMs)
-    --cores NUM             VM CPU cores (for new VMs)
-    --disk SIZE             VM disk size in GB (for new VMs)
-    --persistent            Make bridge persistent across reboots
-    --dry-run               Show what would be done without applying
-    --restore FILE          Restore VM from backup XML
-    --list-adapters         Show supported USB adapters
-    --list-vms              Show available VMs
-    --verbose               Enable verbose output
-    --help                  Show this help message
-
-EXAMPLES:
-    # Interactive setup
-    sudo $0
-
-    # Create new VM with isolation
-    sudo $0 --create-vm --iso /path/to/kali.iso --vm kali-lab
-
-    # Configure existing VM
-    sudo $0 --vm existing-vm --adapter 0e8d:7612
-
-    # Custom network setup
-    sudo $0 --vm test-vm --vlan 200 --interface eth1
-
-EOF
+log_header() {
+    echo -e "\n${PURPLE}${BOLD}=== $1 ===${NC}\n"
 }
 
-# Check dependencies
-check_dependencies() {
-    local deps=("virsh" "ip" "lsusb" "xmllint" "systemctl" "virt-install" "free" "nproc" "bridge" "awk")
-    local missing=()
-
-    for dep in "${deps[@]}"; do
-        if ! command -v "$dep" &> /dev/null; then
-            missing+=("$dep")
-        fi
-    done
-
-    if [[ ${#missing[@]} -ne 0 ]]; then
-        print_error "Missing dependencies: ${missing[*]}"
-        print_info "Please install required packages:"
-        print_info "Ubuntu/Debian: sudo apt install libvirt-clients iproute2 usbutils libxml2-utils systemd virtinst procps bridge-utils gawk"
-        print_info "Arch Linux: sudo pacman -S libvirt iproute2 usbutils libxml2 systemd virt-install coreutils bridge-utils gawk"
-        exit 1
-    fi
-}
-
-# Check root privileges
-check_root() {
-    if [[ $EUID -ne 0 ]]; then
-        print_error "This script must be run as root (use sudo)"
-        exit 1
-    fi
-}
-
-# Check if libvirt is running
-check_libvirt() {
-    if ! systemctl is-active --quiet libvirtd; then
-        print_warning "libvirtd is not running, attempting to start..."
-        systemctl start libvirtd || {
-            print_error "Failed to start libvirtd"
-            exit 1
-        }
-    fi
-}
-
-# Prints system resource info
-print_system_resources() {
-    local total_memory=$(free -m | awk '/^Mem:/{print $2}')
-    local total_cores=$(nproc)
-
-    print_info "System Resources:"
-    print_info "  Total Memory: ${total_memory}MB"
-    print_info "  Total Cores: $total_cores"
-}
-
-# Returns recommended system resources
-get_system_resource_recommendations() {
-    local total_memory=$(free -m | awk '/^Mem:/{print $2}')
-    local total_cores=$(nproc)
-
-    # Calculate recommended resources with proper integer arithmetic
-    local rec_memory=$((total_memory / 4))  # 25% of total memory
-    local min_memory=1024  # 1GB minimum
-    local max_memory=$((total_memory * 3 / 4))  # 75% of total memory max
-
-    local rec_cores=2  # Recommended 2 cores
-    local min_cores=1
-    local max_cores=$((total_cores > 1 ? total_cores - 1 : 1))  # Leave 1 core for host
-
-    # Ensure minimums are respected
-    if [[ $rec_memory -lt $min_memory ]]; then
-        rec_memory=$min_memory
-    fi
-
-    # Return values as colon-separated string for parsing
-    echo "${rec_memory}:${min_memory}:${max_memory}:${rec_cores}:${min_cores}:${max_cores}"
-}
-
-# OS variants database - maps friendly names to osinfo values
-declare -A OS_VARIANTS=(
-    ["Debian 11 (Bullseye)"]="debian11"
-    ["Debian 12 (Bookworm)"]="debian12"
-    ["Ubuntu 20.04 LTS"]="ubuntu20.04"
-    ["Ubuntu 22.04 LTS"]="ubuntu22.04"
-    ["Ubuntu 24.04 LTS"]="ubuntu24.04"
-    ["Kali Linux"]="debian11"  # Kali is based on Debian
-    ["Parrot OS"]="debian11"   # Parrot is based on Debian
-    ["Arch Linux"]="archlinux"
-    ["BlackArch"]="archlinux"  # BlackArch is based on Arch
-    ["Garuda Linux"]="archlinux" # Garuda is based on Arch
-)
-
-# Network topology types
-declare -A NETWORK_TOPOLOGIES=(
-    ["isolated"]="Isolated VLAN with NAT:Complete isolation with internet access"
-    ["bridged"]="Direct bridge access:VM on same network as host"
-    ["host-only"]="Host-only network:VM can only communicate with host"
-    ["dual-nic"]="Dual NIC setup:One isolated, one bridged interface"
-    ["custom"]="Custom configuration:Manual network setup"
-)
-
-# Network security levels
-declare -A SECURITY_LEVELS=(
-    ["high"]="Maximum isolation:No direct host access, strict firewall rules"
-    ["medium"]="Balanced security:Limited host access, monitored traffic"
-    ["low"]="Basic isolation:Standard NAT with minimal restrictions"
-    ["pentest"]="Penetration testing:Optimized for security testing tools"
-)
-
-# Interactive OS selection
-select_os_variant() {
-    # Print menu directly to the terminal, not stdout
-    echo "Select OS type for optimal VM configuration:" > /dev/tty
-    local os_names=()
-    local i=1
-
-    # Build array of OS names for selection
-    for os_name in "${!OS_VARIANTS[@]}"; do
-        echo "$i) $os_name" > /dev/tty
-        os_names+=("$os_name")
-        ((i++))
-    done
-
-    echo "$i) Other/Generic Linux" > /dev/tty
-
+# Progress spinner for long operations
+show_spinner() {
+    local -r delay=0.1
+    local spinstr="|/-\\"
+    local temp
     while true; do
-        # Read from the terminal
-        read -p "Select OS (1-$i): " -r selection < /dev/tty
-        if [[ "$selection" =~ ^[0-9]+$ ]] && [[ "$selection" -ge 1 ]] && [[ "$selection" -le $i ]]; then
-            if [[ "$selection" -eq $i ]]; then
-                echo "linux2022"  # This goes to stdout
-                return
-            else
-                local selected_os="${os_names[$((selection-1))]}"
-                echo "${OS_VARIANTS[$selected_os]}" # This goes to stdout
-                return
-            fi
-        else
-            # Print error to the terminal
-            print_error "Invalid selection. Please enter a number between 1 and $i." > /dev/tty
-        fi
+        temp="${spinstr#?}"
+        printf " [%c]  " "${spinstr}"
+        spinstr=${temp}${spinstr%"${temp}"}
+        sleep "${delay}"
+        printf "\b\b\b\b\b\b"
     done
 }
 
-# FastDL integration for ISO downloads
-declare -A ISO_URLS=(
-    ["Kali Linux"]="https://cdimage.kali.org/kali-2025.2/kali-linux-2025.2-installer-amd64.iso"
-    ["Parrot OS"]="https://deb.parrot.sh/parrot/iso/6.2/Parrot-security-6.2_amd64.iso"
-    ["Ubuntu 22.04"]="https://releases.ubuntu.com/22.04/ubuntu-22.04.4-desktop-amd64.iso"
-    ["Ubuntu 24.04"]="https://releases.ubuntu.com/24.04/ubuntu-24.04.1-desktop-amd64.iso"
-    ["Debian 12"]="https://cdimage.debian.org/debian-cd/current/amd64/iso-cd/debian-12.8.0-amd64-netinst.iso"
-    ["Arch Linux"]="https://archlinux.org/iso/latest/archlinux-x86_64.iso"
-    ["BlackArch"]="https://blackarch.org/downloads.html#iso"
-    ["Garuda Linux"]="https://iso.builds.garudalinux.org/iso/latest/garuda/dr460nized/latest.iso"
-)
+# Clean up function
+cleanup() {
+    [[ -d "$TEMP_DIR" ]] && rm -rf "$TEMP_DIR"
+    # Kill spinner if running
+    jobs -p | xargs -r kill 2>/dev/null || true
+}
 
-# Download ISO using FastDL
-download_iso() {
-    local os_choice="$1"
-    local download_dir="/tmp/vm-isos"
-    local iso_filename
+trap cleanup EXIT
 
-    # Create download directory
-    mkdir -p "$download_dir"
+# Check if command exists
+command_exists() {
+    command -v "$1" >/dev/null 2>&1
+}
 
-    # Get ISO URL
-    local iso_url="${ISO_URLS[$os_choice]}"
-    if [[ -z "$iso_url" ]]; then
-        print_error "No download URL available for $os_choice"
-        return 1
-    fi
+# Detect system architecture and OS
+detect_system() {
+    local os
+    local arch
+    
+    case "$(uname -s)" in
+        Linux*)     os="linux" ;;
+        Darwin*)    os="macos" ;;
+        *)          log_error "Unsupported operating system: $(uname -s)"
+                    exit 1 ;;
+    esac
+    
+    case "$(uname -m)" in
+        x86_64|amd64)   arch="x86_64" ;;
+        aarch64|arm64)  arch="aarch64" ;;
+        armv7l)         arch="armv7" ;;
+        *)              log_error "Unsupported architecture: $(uname -m)"
+                        exit 1 ;;
+    esac
+    
+    echo "${os}-${arch}"
+}
 
-    # Extract filename from URL
-    iso_filename=$(basename "$iso_url")
-    local full_path="$download_dir/$iso_filename"
-
-    # Check if already downloaded
-    if [[ -f "$full_path" ]]; then
-        print_info "ISO already exists: $full_path"
-        echo "$full_path"
+# Install Rust if not present
+install_rust() {
+    if command_exists rustc && command_exists cargo; then
+        log_info "Rust is already installed"
         return 0
     fi
-
-    print_info "Downloading $os_choice ISO..."
-    print_info "This may take several minutes depending on your connection..."
-
-    # Setup FastDL if not present
-    setup_fastdl
-
-    # Download using FastDL
-    if ./fastdl "$iso_url" "$full_path"; then
-        print_success "Download completed: $full_path"
-        echo "$full_path"
-        return 0
+    
+    log_info "Installing Rust toolchain..."
+    
+    # Download and install rustup
+    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable
+    
+    # Source the cargo environment
+    source "$HOME/.cargo/env" 2>/dev/null || true
+    
+    if command_exists rustc && command_exists cargo; then
+        log_success "Rust installed successfully"
     else
-        print_error "Download failed for $os_choice"
-        return 1
-    fi
-}
-
-# Setup FastDL binary
-setup_fastdl() {
-    local fastdl_url="https://github.com/0xb0rn3/fastdl/releases/latest/download/fastdl-linux-amd64"
-
-    if [[ ! -f "./fastdl" ]]; then
-        print_info "Setting up FastDL downloader..."
-
-        if command -v wget &> /dev/null; then
-            wget -q "$fastdl_url" -O ./fastdl
-        elif command -v curl &> /dev/null; then
-            curl -sL "$fastdl_url" -o ./fastdl
-        else
-            print_error "Neither wget nor curl available for downloading FastDL"
-            return 1
-        fi
-
-        chmod +x ./fastdl
-        print_success "FastDL ready"
-    fi
-}
-
-# Cleanup FastDL after use
-cleanup_fastdl() {
-    if [[ -f "./fastdl" ]]; then
-        rm -f ./fastdl
-        print_info "Cleaned up FastDL binary"
-    fi
-}
-
-# Detect existing VMs
-detect_vms() {
-    print_info "Detecting existing VMs..." >&2 # FIX: Redirect info to stderr
-    local vms=$(virsh list --all --name | grep -v '^$')
-
-    if [[ -z "$vms" ]]; then
-        print_warning "No existing VMs found" >&2 # FIX: Redirect warning to stderr
-        return 1
-    fi
-
-    echo "$vms"
-    return 0
-}
-
-# Fixed USB WiFi adapter detection
-detect_usb_adapters() {
-    # FIX: Redirect info messages to stderr to avoid polluting function output
-    print_info "Scanning for USB WiFi adapters..." >&2
-    local found_adapters=()
-
-    # Use a more reliable way to parse lsusb output
-    while IFS= read -r line; do
-        if [[ "$line" =~ ID[[:space:]]+([0-9a-f]{4}):([0-9a-f]{4}) ]]; then
-            local vendor_id="${BASH_REMATCH[1]}"
-            local product_id="${BASH_REMATCH[2]}"
-            local vendor_product="${vendor_id}:${product_id}"
-
-            if [[ -n "${ADAPTERS[$vendor_product]:-}" ]]; then
-                local adapter_info="${ADAPTERS[$vendor_product]}"
-                # Securely pass info, separating fields with a unique, safe delimiter
-                found_adapters+=("${vendor_product}|${adapter_info}")
-            fi
-        fi
-    done < <(lsusb)
-
-    if [[ ${#found_adapters[@]} -eq 0 ]]; then
-        print_warning "No supported USB WiFi adapters found." >&2
-        return 1
-    fi
-
-    # Print each adapter on a new line for the calling function to process
-    printf '%s\n' "${found_adapters[@]}"
-    return 0
-}
-
-# Generate MAC address
-generate_mac() {
-    printf '52:54:00:%02x:%02x:%02x\n' $((RANDOM%256)) $((RANDOM%256)) $((RANDOM%256))
-}
-
-# Find next available PCI slot
-find_next_pci_slot() {
-    local vm_name="$1"
-    local xml_content=$(virsh dumpxml "$vm_name")
-    local used_slots=()
-
-    # Extract used PCI slots
-    while IFS= read -r line; do
-        if [[ "$line" =~ slot=\'0x([0-9a-f]+)\' ]]; then
-            used_slots+=("$((16#${BASH_REMATCH[1]}))")
-        fi
-    done <<< "$xml_content"
-
-    # Find next available slot (starting from 0x03, 0x02 is usually reserved)
-    for ((slot=3; slot<=31; slot++)); do
-        if [[ ! " ${used_slots[*]} " =~ " $slot " ]]; then
-            printf '0x%02x' "$slot"
-            return
-        fi
-    done
-
-    print_error "No available PCI slots found"
-    exit 1
-}
-
-# Find next available USB port
-find_next_usb_port() {
-    local vm_name="$1"
-    local xml_content=$(virsh dumpxml "$vm_name")
-    local used_ports=()
-
-    # Extract used USB ports
-    while IFS= read -r line; do
-        if [[ "$line" =~ port=\'([0-9]+)\' ]]; then
-            used_ports+=("${BASH_REMATCH[1]}")
-        fi
-    done <<< "$xml_content"
-
-    # Find next available port
-    for ((port=1; port<=8; port++)); do
-        if [[ ! " ${used_ports[*]} " =~ " $port " ]]; then
-            echo "$port"
-            return
-        fi
-    done
-
-    print_error "No available USB ports found"
-    exit 1
-}
-
-# --- ENHANCED NETWORK SETUP SECTION ---
-
-# Enhanced network interface detection with more details
-detect_network_interfaces_enhanced() {
-    print_info "Scanning network interfaces..." >&2
-    local interfaces_info=()
-
-    while IFS= read -r iface; do
-        # Skip loopback, docker, bridge, and virtual interfaces
-        if [[ ! "$iface" =~ ^(lo|docker|br|virbr|veth|tun|tap) ]]; then
-            local ip_info=$(ip addr show "$iface" 2>/dev/null | awk '/inet / {print $2}' | head -1)
-            local link_state=$(ip link show "$iface" 2>/dev/null | awk '/state/ {print $9}')
-            local speed=""
-            
-            # Try to get interface speed (for ethernet interfaces)
-            if [[ -f "/sys/class/net/$iface/speed" ]]; then
-                speed=$(cat "/sys/class/net/$iface/speed" 2>/dev/null)
-                [[ "$speed" != "-1" ]] && speed="${speed}Mbps" || speed="Unknown"
-            else
-                speed="Wireless/Virtual"
-            fi
-
-            local iface_type="Unknown"
-            # Determine interface type
-            if [[ -d "/sys/class/net/$iface/wireless" ]]; then
-                iface_type="WiFi"
-            elif [[ -f "/sys/class/net/$iface/device/driver" ]]; then
-                iface_type="Ethernet"
-            fi
-
-            # Format: interface|ip|state|speed|type
-            interfaces_info+=("${iface}|${ip_info:-No IP}|${link_state:-DOWN}|${speed}|${iface_type}")
-        fi
-    done < <(ip link show | awk -F': ' '/^[0-9]+:/ {print $2}' | cut -d'@' -f1)
-
-    printf '%s\n' "${interfaces_info[@]}"
-}
-
-# Enhanced network topology selection
-select_network_topology() {
-    echo "Available Network Topologies:" > /dev/tty
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" > /dev/tty
-    
-    local topologies=()
-    local i=1
-    
-    for topology in "${!NETWORK_TOPOLOGIES[@]}"; do
-        local description="${NETWORK_TOPOLOGIES[$topology]}"
-        local name=$(echo "$description" | cut -d':' -f1)
-        local desc=$(echo "$description" | cut -d':' -f2)
-        
-        echo "$i) $name" > /dev/tty
-        echo "   $desc" > /dev/tty
-        echo > /dev/tty
-        topologies+=("$topology")
-        ((i++))
-    done
-
-    while true; do
-        read -p "Select network topology (1-$((i-1))): " -r selection < /dev/tty
-        if [[ "$selection" =~ ^[0-9]+$ ]] && [[ "$selection" -ge 1 ]] && [[ "$selection" -lt $i ]]; then
-            echo "${topologies[$((selection-1))]}"
-            return 0
-        else
-            print_error "Invalid selection. Please enter a number between 1 and $((i-1))." > /dev/tty
-        fi
-    done
-}
-
-# Enhanced security level selection
-select_security_level() {
-    echo "Security Level Configuration:" > /dev/tty
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" > /dev/tty
-    
-    local levels=()
-    local i=1
-    
-    for level in "${!SECURITY_LEVELS[@]}"; do
-        local description="${SECURITY_LEVELS[$level]}"
-        local name=$(echo "$description" | cut -d':' -f1)
-        local desc=$(echo "$description" | cut -d':' -f2)
-        
-        echo "$i) $level - $name" > /dev/tty
-        echo "   $desc" > /dev/tty
-        echo > /dev/tty
-        levels+=("$level")
-        ((i++))
-    done
-
-    while true; do
-        read -p "Select security level (1-$((i-1))): " -r selection < /dev/tty
-        if [[ "$selection" =~ ^[0-9]+$ ]] && [[ "$selection" -ge 1 ]] && [[ "$selection" -lt $i ]]; then
-            echo "${levels[$((selection-1))]}"
-            return 0
-        else
-            print_error "Invalid selection. Please enter a number between 1 and $((i-1))." > /dev/tty
-        fi
-    done
-}
-
-# Enhanced interface selection with detailed information
-select_network_interface_enhanced() {
-    local interfaces_info
-    interfaces_info=$(detect_network_interfaces_enhanced)
-
-    if [[ -z "$interfaces_info" ]]; then
-        print_error "No suitable network interfaces found"
+        log_error "Failed to install Rust"
         exit 1
     fi
-
-    echo "Available Network Interfaces:" > /dev/tty
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" > /dev/tty
-    printf "%-12s %-18s %-8s %-12s %-10s\n" "Interface" "IP Address" "State" "Speed" "Type" > /dev/tty
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" > /dev/tty
-    
-    local interface_array=()
-    local i=1
-    
-    while IFS='|' read -r iface ip state speed type; do
-        printf "%d) %-8s %-18s %-8s %-12s %-10s\n" "$i" "$iface" "$ip" "$state" "$speed" "$type" > /dev/tty
-        interface_array+=("$iface")
-        ((i++))
-    done <<< "$interfaces_info"
-    
-    echo > /dev/tty
-    local last_index=$((i-1))
-
-    while true; do
-        read -p "Select interface (1-$last_index): " -r selection < /dev/tty
-        if [[ "$selection" =~ ^[0-9]+$ ]] && [[ "$selection" -ge 1 ]] && [[ "$selection" -le $last_index ]]; then
-            echo "${interface_array[$((selection-1))]}"
-            return 0
-        else
-            print_error "Invalid selection. Please enter a number between 1 and $last_index." > /dev/tty
-        fi
-    done
 }
 
-# Enhanced bridge creation with topology support
-create_bridge_enhanced() {
-    local interface="$1"
-    local bridge="$2"
-    local vlan="$3"
-    local topology="$4"
-    local security_level="$5"
-
-    print_info "Setting up $topology network topology with $security_level security..."
-
-    if [[ "$DRY_RUN" == true ]]; then
-        print_info "[DRY RUN] Would create $topology bridge configuration"
-        return
-    fi
-
-    # Check if bridge already exists
-    if ip link show "$bridge" &> /dev/null; then
-        print_warning "Bridge '$bridge' already exists."
-        read -p "Do you want to (d)elete and recreate it, (u)se existing, or (c)ancel? [d/u/c]: " -r choice < /dev/tty
-        case "$choice" in
-            d|D)
-                print_info "Deleting existing bridge..."
-                cleanup_existing_bridge "$bridge"
-                ;;
-            u|U)
-                print_info "Using existing bridge '$bridge'."
-                return 0
-                ;;
-            c|C|*)
-                print_error "Bridge setup cancelled."
+# Install system dependencies
+install_dependencies() {
+    log_info "Installing system dependencies..."
+    
+    case "$(uname -s)" in
+        Linux*)
+            # Detect package manager and install dependencies
+            if command_exists apt-get; then
+                sudo apt-get update >/dev/null 2>&1
+                sudo apt-get install -y curl build-essential pkg-config libssl-dev >/dev/null 2>&1
+            elif command_exists yum; then
+                sudo yum groupinstall -y "Development Tools" >/dev/null 2>&1
+                sudo yum install -y curl openssl-devel >/dev/null 2>&1
+            elif command_exists dnf; then
+                sudo dnf groupinstall -y "Development Tools" >/dev/null 2>&1
+                sudo dnf install -y curl openssl-devel >/dev/null 2>&1
+            elif command_exists pacman; then
+                sudo pacman -Sy --noconfirm base-devel curl openssl >/dev/null 2>&1
+            elif command_exists zypper; then
+                sudo zypper install -y -t pattern devel_basis >/dev/null 2>&1
+                sudo zypper install -y curl libopenssl-devel >/dev/null 2>&1
+            else
+                log_warning "Unknown package manager. Please install: curl, build-essential, pkg-config, libssl-dev"
+            fi
+            ;;
+        Darwin*)
+            # macOS - check if Xcode command line tools are installed
+            if ! xcode-select -p >/dev/null 2>&1; then
+                log_info "Installing Xcode command line tools..."
+                xcode-select --install
+                log_info "Please complete Xcode installation and run this script again"
                 exit 1
-                ;;
-        esac
-    fi
-
-    # Create bridge based on topology
-    case "$topology" in
-        "isolated")
-            create_isolated_bridge "$interface" "$bridge" "$vlan" "$security_level"
-            ;;
-        "bridged")
-            create_bridged_network "$interface" "$bridge"
-            ;;
-        "host-only")
-            create_hostonly_network "$bridge" "$vlan"
-            ;;
-        "dual-nic")
-            create_dual_nic_setup "$interface" "$bridge" "$vlan" "$security_level"
-            ;;
-        "custom")
-            create_custom_network "$interface" "$bridge" "$vlan"
-            ;;
-        *)
-            print_error "Unknown topology: $topology"
-            exit 1
-            ;;
-    esac
-
-    # Apply security level configurations
-    apply_security_rules "$bridge" "$vlan" "$security_level" "$topology"
-}
-
-# Isolated bridge with VLAN (original functionality enhanced)
-create_isolated_bridge() {
-    local interface="$1"
-    local bridge="$2"
-    local vlan="$3"
-    local security_level="$4"
-
-    print_info "Creating isolated bridge with VLAN $vlan..."
-    
-    # Create bridge
-    ip link add name "$bridge" type bridge
-    ip link set dev "$bridge" up
-    
-    # Add interface to bridge
-    ip link set dev "$interface" master "$bridge"
-    
-    # Create VLAN interface
-    local vlan_interface="${bridge}.${vlan}"
-    ip link add link "$bridge" name "$vlan_interface" type vlan id "$vlan"
-    ip link set dev "$vlan_interface" up
-    
-    # Assign IP based on security level
-    case "$security_level" in
-        "high"|"pentest")
-            ip addr add "10.${vlan}.1.1/24" dev "$vlan_interface"
-            ;;
-        *)
-            ip addr add "192.168.${vlan}.1/24" dev "$vlan_interface"
-            ;;
-    esac
-    
-    print_success "Created isolated bridge network"
-}
-
-# Direct bridged network (VM on same network as host)
-create_bridged_network() {
-    local interface="$1"
-    local bridge="$2"
-
-    print_info "Creating bridged network..."
-    
-    # Create bridge
-    ip link add name "$bridge" type bridge
-    ip link set dev "$bridge" up
-    
-    # Add interface to bridge
-    ip link set dev "$interface" master "$bridge"
-    
-    # Enable promiscuous mode for better compatibility
-    ip link set dev "$bridge" promisc on
-    
-    print_success "Created bridged network"
-}
-
-# Host-only network (VM can only talk to host)
-create_hostonly_network() {
-    local bridge="$1"
-    local vlan="$2"
-
-    print_info "Creating host-only network..."
-    
-    # Create bridge without adding physical interface
-    ip link add name "$bridge" type bridge
-    ip link set dev "$bridge" up
-    
-    # Create virtual interface for host communication
-    local host_interface="${bridge}-host"
-    ip link add name "$host_interface" type veth peer name "${host_interface}-peer"
-    ip link set dev "$host_interface" master "$bridge"
-    ip link set dev "$host_interface" up
-    ip link set dev "${host_interface}-peer" up
-    
-    # Assign IP to host side
-    ip addr add "172.16.${vlan}.1/24" dev "${host_interface}-peer"
-    
-    print_success "Created host-only network"
-}
-
-# Dual NIC setup (one isolated, one bridged)
-create_dual_nic_setup() {
-    local interface="$1"
-    local bridge="$2" 
-    local vlan="$3"
-    local security_level="$4"
-
-    print_info "Creating dual NIC setup..."
-    
-    # Create isolated bridge
-    local isolated_bridge="${bridge}-isolated"
-    create_isolated_bridge "$interface" "$isolated_bridge" "$vlan" "$security_level"
-    
-    # Create bridged network
-    local bridged_bridge="${bridge}-bridged"
-    create_bridged_network "$interface" "$bridged_bridge"
-    
-    # Store both bridge names for later use
-    BRIDGE_NAME="$isolated_bridge"
-    BRIDGE_NAME_SECONDARY="$bridged_bridge"
-    
-    print_success "Created dual NIC setup"
-}
-
-# Custom network configuration
-create_custom_network() {
-    local interface="$1"
-    local bridge="$2"
-    local vlan="$3"
-
-    print_info "Setting up custom network configuration..."
-    
-    echo "Custom Network Configuration:" > /dev/tty
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" > /dev/tty
-    
-    read -p "Bridge IP address (e.g., 192.168.100.1/24): " -r custom_ip < /dev/tty
-    read -p "Enable NAT? [y/n]: " -r enable_nat < /dev/tty
-    read -p "Custom iptables rules file (optional, press Enter to skip): " -r custom_rules < /dev/tty
-    
-    # Create basic bridge
-    ip link add name "$bridge" type bridge
-    ip link set dev "$bridge" up
-    ip link set dev "$interface" master "$bridge"
-    
-    # Apply custom IP
-    [[ -n "$custom_ip" ]] && ip addr add "$custom_ip" dev "$bridge"
-    
-    # Enable NAT if requested
-    if [[ "$enable_nat" =~ ^[Yy]$ ]]; then
-        enable_nat_forwarding "$bridge" "$interface"
-    fi
-    
-    # Apply custom rules if provided
-    if [[ -n "$custom_rules" && -f "$custom_rules" ]]; then
-        print_info "Applying custom iptables rules from $custom_rules"
-        bash "$custom_rules"
-    fi
-    
-    print_success "Created custom network"
-}
-
-# Enhanced security rule application
-apply_security_rules() {
-    local bridge="$1"
-    local vlan="$2"
-    local security_level="$3"
-    local topology="$4"
-
-    print_info "Applying $security_level security rules..."
-
-    # Enable IP forwarding
-    echo 1 > /proc/sys/net/ipv4/ip_forward
-
-    case "$security_level" in
-        "high")
-            apply_high_security_rules "$bridge" "$vlan" "$topology"
-            ;;
-        "medium")
-            apply_medium_security_rules "$bridge" "$vlan" "$topology"
-            ;;
-        "low")
-            apply_low_security_rules "$bridge" "$vlan" "$topology"
-            ;;
-        "pentest")
-            apply_pentest_security_rules "$bridge" "$vlan" "$topology"
-            ;;
-    esac
-}
-
-# High security rules (maximum isolation)
-apply_high_security_rules() {
-    local bridge="$1"
-    local vlan="$2"
-    local topology="$3"
-    
-    local vlan_interface="${bridge}.${vlan}"
-    local subnet="10.${vlan}.1.0/24"
-    
-    # Create custom chain for VM traffic
-    iptables -t nat -N VM_ISOLATION_OUT 2>/dev/null || true
-    iptables -t filter -N VM_ISOLATION_FORWARD 2>/dev/null || true
-    
-    # NAT rules - only allow outbound internet
-    iptables -t nat -A VM_ISOLATION_OUT -s "$subnet" -d 10.0.0.0/8 -j DROP
-    iptables -t nat -A VM_ISOLATION_OUT -s "$subnet" -d 172.16.0.0/12 -j DROP
-    iptables -t nat -A VM_ISOLATION_OUT -s "$subnet" -d 192.168.0.0/16 -j DROP
-    iptables -t nat -A VM_ISOLATION_OUT -s "$subnet" -j MASQUERADE
-    iptables -t nat -A POSTROUTING -j VM_ISOLATION_OUT
-    
-    # Forward rules - block host access
-    iptables -A VM_ISOLATION_FORWARD -i "$vlan_interface" -d 10.0.0.0/8 -j DROP
-    iptables -A VM_ISOLATION_FORWARD -i "$vlan_interface" -d 172.16.0.0/12 -j DROP
-    iptables -A VM_ISOLATION_FORWARD -i "$vlan_interface" -d 192.168.0.0/16 -j DROP
-    iptables -A VM_ISOLATION_FORWARD -i "$vlan_interface" -j ACCEPT
-    iptables -A VM_ISOLATION_FORWARD -o "$vlan_interface" -m state --state RELATED,ESTABLISHED -j ACCEPT
-    iptables -A FORWARD -j VM_ISOLATION_FORWARD
-    
-    print_success "Applied high security isolation rules"
-}
-
-# Medium security rules (balanced)
-apply_medium_security_rules() {
-    local bridge="$1"
-    local vlan="$2"
-    local topology="$3"
-    
-    local vlan_interface="${bridge}.${vlan}"
-    local subnet="192.168.${vlan}.0/24"
-    
-    # Standard NAT with some restrictions
-    iptables -t nat -A POSTROUTING -s "$subnet" ! -o "$bridge" -j MASQUERADE
-    
-    # Allow limited host access (SSH, HTTP, HTTPS only)
-    iptables -A FORWARD -i "$vlan_interface" -p tcp --dport 22 -j ACCEPT
-    iptables -A FORWARD -i "$vlan_interface" -p tcp --dport 80 -j ACCEPT
-    iptables -A FORWARD -i "$vlan_interface" -p tcp --dport 443 -j ACCEPT
-    iptables -A FORWARD -i "$vlan_interface" -o "$vlan_interface" -j ACCEPT
-    iptables -A FORWARD -o "$vlan_interface" -m state --state RELATED,ESTABLISHED -j ACCEPT
-    
-    print_success "Applied medium security rules"
-}
-
-# Low security rules (basic NAT)
-apply_low_security_rules() {
-    local bridge="$1"
-    local vlan="$2"
-    local topology="$3"
-    
-    local vlan_interface="${bridge}.${vlan}"
-    local subnet="192.168.${vlan}.0/24"
-    
-    # Basic NAT rules
-    iptables -t nat -A POSTROUTING -s "$subnet" ! -o "$bridge" -j MASQUERADE
-    iptables -A FORWARD -i "$vlan_interface" -j ACCEPT
-    iptables -A FORWARD -o "$vlan_interface" -m state --state RELATED,ESTABLISHED -j ACCEPT
-    
-    print_success "Applied basic security rules"
-}
-
-# Penetration testing optimized rules
-apply_pentest_security_rules() {
-    local bridge="$1"
-    local vlan="$2"
-    local topology="$3"
-    
-    local vlan_interface="${bridge}.${vlan}"
-    local subnet="10.${vlan}.1.0/24"
-    
-    # Optimized for pentesting tools
-    iptables -t nat -A POSTROUTING -s "$subnet" ! -o "$bridge" -j MASQUERADE
-    
-    # Allow all outbound traffic
-    iptables -A FORWARD -i "$vlan_interface" -j ACCEPT
-    iptables -A FORWARD -o "$vlan_interface" -m state --state RELATED,ESTABLISHED -j ACCEPT
-    
-    # Enable packet forwarding optimizations
-    echo 1 > /proc/sys/net/ipv4/ip_forward
-    echo 0 > /proc/sys/net/ipv4/conf/all/rp_filter
-    echo 0 > /proc/sys/net/ipv4/conf/"$vlan_interface"/rp_filter
-    
-    # Increase network buffer sizes for better performance
-    echo 16777216 > /proc/sys/net/core/rmem_max
-    echo 16777216 > /proc/sys/net/core/wmem_max
-    
-    print_success "Applied penetration testing optimized rules"
-}
-
-# Enable NAT forwarding
-enable_nat_forwarding() {
-    local bridge="$1"
-    local interface="$2"
-    
-    iptables -t nat -A POSTROUTING -o "$interface" -j MASQUERADE
-    iptables -A FORWARD -i "$bridge" -o "$interface" -j ACCEPT
-    iptables -A FORWARD -i "$interface" -o "$bridge" -m state --state RELATED,ESTABLISHED -j ACCEPT
-}
-
-# Cleanup existing bridge configuration
-cleanup_existing_bridge() {
-    local bridge="$1"
-    
-    print_info "Cleaning up existing bridge configuration..."
-    
-    # Remove all VLAN interfaces associated with this bridge
-    ip link show | grep "$bridge\." | awk '{print $2}' | cut -d':' -f1 | while read -r vlan_iface; do
-        ip link delete "$vlan_iface" 2>/dev/null || true
-    done
-    
-    # Remove bridge
-    ip link set dev "$bridge" down 2>/dev/null || true
-    ip link delete "$bridge" 2>/dev/null || true
-    
-    # Clean up iptables rules
-    iptables -t nat -F 2>/dev/null || true
-    iptables -t filter -F FORWARD 2>/dev/null || true
-    
-    print_success "Cleaned up existing bridge"
-}
-
-# --- END OF ENHANCED NETWORK SECTION ---
-
-# Backup VM configuration
-backup_vm_config() {
-    local vm_name="$1"
-    local timestamp=$(date +%Y%m%d_%H%M%S)
-    local backup_file="$BACKUP_DIR/${vm_name}_backup_${timestamp}.xml"
-
-    mkdir -p "$BACKUP_DIR"
-
-    if virsh dumpxml "$vm_name" > "$backup_file"; then
-        print_success "VM configuration backed up to $backup_file"
-        echo "$backup_file"
-    else
-        print_error "Failed to backup VM configuration"
-        exit 1
-    fi
-}
-
-# Generate enhanced network interface XML with multiple NICs support
-generate_network_xml_enhanced() {
-    local bridge="$1"
-    local vlan="$2"
-    local mac="$3"
-    local pci_slot="$4"
-    local nic_type="${5:-virtio}"  # Default to virtio, but allow other types
-    local network_name="${6:-}"    # Optional network name
-
-    # Different network interface types based on topology
-    case "$NETWORK_TOPOLOGY" in
-        "dual-nic")
-            # Generate XML for dual NIC setup
-            cat << EOF
-    <interface type='bridge'>
-      <mac address='$mac'/>
-      <source bridge='$bridge'/>
-      <vlan>
-        <tag id='$vlan'/>
-      </vlan>
-      <model type='$nic_type'/>
-      <address type='pci' domain='0x0000' bus='0x00' slot='$pci_slot' function='0x0'/>
-    </interface>
-    <interface type='bridge'>
-      <mac address='$(generate_mac)'/>
-      <source bridge='${BRIDGE_NAME_SECONDARY:-br1}'/>
-      <model type='$nic_type'/>
-      <address type='pci' domain='0x0000' bus='0x00' slot='0x$(printf "%02x" $((0x$pci_slot + 1)))' function='0x0'/>
-    </interface>
-EOF
-            ;;
-        "bridged")
-            # Direct bridge without VLAN
-            cat << EOF
-    <interface type='bridge'>
-      <mac address='$mac'/>
-      <source bridge='$bridge'/>
-      <model type='$nic_type'/>
-      <address type='pci' domain='0x0000' bus='0x00' slot='$pci_slot' function='0x0'/>
-    </interface>
-EOF
-            ;;
-        *)
-            # Standard isolated network with VLAN
-            cat << EOF
-    <interface type='bridge'>
-      <mac address='$mac'/>
-      <source bridge='$bridge'/>
-      <vlan>
-        <tag id='$vlan'/>
-      </vlan>
-      <model type='$nic_type'/>
-      <address type='pci' domain='0x0000' bus='0x00' slot='$pci_slot' function='0x0'/>
-    </interface>
-EOF
-            ;;
-    esac
-}
-
-
-# Generate USB passthrough XML
-generate_usb_xml() {
-    local vendor="$1"
-    local product="$2"
-    local usb_port="$3"
-
-    cat << EOF
-    <hostdev mode='subsystem' type='usb' managed='yes'>
-      <source>
-        <vendor id='0x$vendor'/>
-        <product id='0x$product'/>
-      </source>
-      <address type='usb' bus='0' port='$usb_port'/>
-    </hostdev>
-EOF
-}
-
-# Modify VM XML configuration
-modify_vm_xml() {
-    local vm_name="$1"
-    local add_network="$2"
-    local add_usb="$3"
-
-    print_info "Modifying VM configuration for $vm_name..."
-
-    if [[ "$DRY_RUN" == true ]]; then
-        print_info "[DRY RUN] Would modify VM $vm_name"
-        [[ "$add_network" == true ]] && print_info "[DRY RUN] Would add bridge network interface"
-        [[ "$add_usb" == true ]] && print_info "[DRY RUN] Would add USB passthrough for $USB_VENDOR:$USB_PRODUCT"
-        return
-    fi
-
-    # FIX: Check if VM is running and destroy it instead of exiting.
-    if virsh list --state-running --name | grep -q "^$vm_name$"; then
-        print_warning "VM $vm_name is running. It will be forcefully stopped to apply changes."
-        virsh destroy "$vm_name" &> /dev/null || print_warning "Could not stop VM (may already be stopped)."
-        print_info "Waiting for VM to shut down..."
-        sleep 2
-    fi
-
-    # Backup configuration
-    local backup_file=$(backup_vm_config "$vm_name")
-
-    # Get current XML
-    local temp_xml="/tmp/${vm_name}_modified.xml"
-    virsh dumpxml "$vm_name" > "$temp_xml"
-
-    # Assemble all XML additions
-    local xml_additions=""
-    if [[ "$add_network" == true ]]; then
-        local mac=$(generate_mac)
-        local pci_slot=$(find_next_pci_slot "$vm_name")
-        xml_additions+=$(generate_network_xml_enhanced "$BRIDGE_NAME" "$VLAN_ID" "$mac" "$pci_slot")
-        print_success "Generated network interface configuration"
-    fi
-    if [[ "$add_usb" == true ]]; then
-        local usb_port=$(find_next_usb_port "$vm_name")
-        xml_additions+=$(generate_usb_xml "$USB_VENDOR" "$USB_PRODUCT" "$usb_port")
-        print_success "Generated USB passthrough configuration"
-    fi
-
-    # FIX: Use a robust method (awk) to insert XML before the </devices> tag.
-    # This avoids the `sed` error caused by special characters in the XML.
-    if [[ -n "$xml_additions" ]]; then
-        local temp_modified_xml="${temp_xml}.new"
-        awk -v new_content="$xml_additions" '
-        /<\/devices>/ {
-          print new_content
-        }
-        {
-          print
-        }
-        ' "$temp_xml" > "$temp_modified_xml" && mv "$temp_modified_xml" "$temp_xml"
-    fi
-
-    # Validate XML
-    if xmllint --noout "$temp_xml" 2>/dev/null; then
-        print_success "XML validation passed"
-    else
-        print_error "XML validation failed. This is a critical error."
-        print_info "The original configuration is safe in: $backup_file"
-        print_info "The faulty generated XML is at: $temp_xml"
-        exit 1
-    fi
-
-    # Apply configuration
-    if virsh define "$temp_xml"; then
-        print_success "VM configuration updated successfully"
-        rm -f "$temp_xml"
-    else
-        print_error "Failed to apply VM configuration"
-        print_info "Original configuration preserved in: $backup_file"
-        rm -f "$temp_xml"
-        exit 1
-    fi
-}
-
-# Updated VM creation with proper OS variant support
-create_new_vm() {
-    local vm_name="$1"
-    local iso_path="$2"
-    local memory="$3"
-    local cores="$4"
-    local disk_size="$5"
-    local os_variant="$6"  # New parameter for OS variant
-
-    print_info "Creating new VM: $vm_name"
-
-    if [[ "$DRY_RUN" == true ]]; then
-        print_info "[DRY RUN] Would create VM with:"
-        print_info "[DRY RUN]   Name: $vm_name"
-        print_info "[DRY RUN]   ISO: $iso_path"
-        print_info "[DRY RUN]   Memory: ${memory}MB"
-        print_info "[DRY RUN]   Cores: $cores"
-        print_info "[DRY RUN]   Disk: ${disk_size}GB"
-        print_info "[DRY RUN]   OS Variant: $os_variant"
-        return
-    fi
-
-    # Check if VM already exists and offer to delete it
-    if virsh list --all --name | grep -q "^$vm_name$"; then
-        print_warning "VM '$vm_name' already exists."
-        read -p "Do you want to delete the existing VM and create a new one? [y/n]: " -r choice
-        if [[ $choice =~ ^[Yy]$ ]]; then
-            print_info "Deleting existing VM '$vm_name'..."
-            virsh destroy "$vm_name" 2>/dev/null || true # Ignore error if not running
-            virsh undefine "$vm_name" --remove-all-storage
-            print_success "Existing VM '$vm_name' deleted."
-        else
-            print_error "VM creation cancelled."
-            exit 1
-        fi
-    fi
-
-    # Check if ISO exists
-    if [[ ! -f "$iso_path" ]]; then
-        print_error "ISO file not found: $iso_path"
-        exit 1
-    fi
-
-    # Create VM disk directory
-    local vm_dir="/var/lib/libvirt/images"
-    local disk_path="$vm_dir/${vm_name}.qcow2"
-
-    # Create VM with proper OS variant
-    print_info "Creating VM with virt-install..."
-    virt-install \
-        --name "$vm_name" \
-        --memory "$memory" \
-        --vcpus "$cores" \
-        --disk path="$disk_path",size="$disk_size",format=qcow2,bus=virtio \
-        --cdrom "$iso_path" \
-        --os-variant "$os_variant" \
-        --network none \
-        --graphics vnc,listen=0.0.0.0 \
-        --noautoconsole \
-        --boot cdrom,hd \
-        --video virtio
-
-    print_success "VM $vm_name created successfully"
-    print_info "VM disk location: $disk_path"
-    print_info "Connect via VNC to complete installation"
-}
-
-# Interactive VM selection
-select_vm() {
-    local vms
-    if ! vms=$(detect_vms); then
-        read -p "No existing VMs found. Create a new VM? (y/n): " -r
-        if [[ $REPLY =~ ^[Yy]$ ]]; then
-            CREATE_NEW_VM=true
-            return
-        else
-            exit 1
-        fi
-    fi
-
-    echo "Available VMs:"
-    local vm_array=()
-    local i=1
-    while IFS= read -r vm; do
-        echo "$i) $vm"
-        vm_array+=("$vm")
-        ((i++))
-    done <<< "$vms"
-
-    echo "$i) Create new VM"
-
-    while true; do
-        read -p "Select VM (1-$i): " -r selection
-        if [[ "$selection" =~ ^[0-9]+$ ]] && [[ "$selection" -ge 1 ]] && [[ "$selection" -le $i ]]; then
-            if [[ "$selection" -eq $i ]]; then
-                CREATE_NEW_VM=true
-                break
-            else
-                VM_NAME="${vm_array[$((selection-1))]}"
-                break
             fi
-        else
-            print_error "Invalid selection. Please enter a number between 1 and $i."
-        fi
-    done
+            ;;
+    esac
 }
 
-# Interactive USB adapter selection
-select_usb_adapter() {
-    local adapters_output
-    if ! adapters_output=$(detect_usb_adapters); then
-        # The function already prints a warning to stderr
+# Build the Rust core - FIXED VERSION
+build_core() {
+    log_info "Building FastDL core engine..."
+    
+    mkdir -p "$TEMP_DIR"
+    cd "$TEMP_DIR"
+    
+    # Create the Rust project structure
+    mkdir -p src
+    
+    # Fixed Cargo.toml with proper dependencies
+    cat > Cargo.toml << 'EOF'
+[package]
+name = "fastdl-core"
+version = "0.1.0"
+edition = "2021"
+authors = ["FastDL Team"]
+description = "High-performance cross-platform file downloader core engine"
+license = "MIT"
+
+[[bin]]
+name = "fastdl-core"
+path = "src/main.rs"
+
+[dependencies]
+tokio = { version = "1.35", features = ["full"] }
+futures-util = "0.3"
+reqwest = { version = "0.11", features = ["stream", "json"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+url = "2.4"
+urlencoding = "2.1"
+indicatif = "0.17"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
+EOF
+
+    # Fixed Rust code with proper error handling and structure
+    cat > src/main.rs << 'EOF'
+use std::env;
+use std::fs::File;
+use std::io::{self, Write, Seek, SeekFrom};
+use std::path::PathBuf;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
+use std::time::{Duration, Instant};
+use std::collections::HashMap;
+
+use reqwest::Client;
+use serde::{Deserialize, Serialize};
+use tokio::fs::File as AsyncFile;
+use tokio::io::{AsyncSeekExt, AsyncWriteExt};
+use tokio::sync::{Semaphore, Mutex};
+use tokio::time::sleep;
+use futures_util::StreamExt;
+
+// Configuration structure - received from wrapper scripts
+#[derive(Debug, Deserialize)]
+pub struct DownloadConfig {
+    pub urls: Vec<String>,
+    pub output_dir: String,
+    pub connections: usize,
+    pub chunk_size_mb: usize,
+    pub timeout_seconds: u64,
+    pub retries: usize,
+    pub max_concurrent: usize,
+    pub url_file: Option<String>,
+    pub verbose: bool,
+}
+
+// Progress information sent back to wrapper
+#[derive(Debug, Serialize)]
+pub struct DownloadProgress {
+    pub url: String,
+    pub filename: String,
+    pub total_size: u64,
+    pub downloaded: u64,
+    pub speed_mbps: f64,
+    pub eta_seconds: u64,
+    pub status: String,
+}
+
+// Final download result
+#[derive(Debug, Serialize)]
+pub struct DownloadResult {
+    pub url: String,
+    pub filename: String,
+    pub success: bool,
+    pub error: Option<String>,
+    pub total_time_seconds: f64,
+    pub average_speed_mbps: f64,
+    pub file_size: u64,
+}
+
+// Chunk information for multi-threaded downloading
+#[derive(Debug, Clone)]
+pub struct ChunkInfo {
+    pub start: u64,
+    pub end: u64,
+    pub size: u64,
+    pub completed: bool,
+    pub retries: usize,
+}
+
+// Statistics tracking for each download with thread-safe updates
+pub struct DownloadStats {
+    pub total_size: AtomicU64,
+    pub downloaded: AtomicU64,
+    pub start_time: Instant,
+    pub chunks_completed: AtomicU64,
+    pub chunks_total: AtomicU64,
+}
+
+impl DownloadStats {
+    pub fn new() -> Self {
+        Self {
+            total_size: AtomicU64::new(0),
+            downloaded: AtomicU64::new(0),
+            start_time: Instant::now(),
+            chunks_completed: AtomicU64::new(0),
+            chunks_total: AtomicU64::new(0),
+        }
+    }
+
+    // Calculate current download speed in MB/s
+    pub fn speed_mbps(&self) -> f64 {
+        let elapsed = self.start_time.elapsed().as_secs_f64();
+        if elapsed > 0.0 {
+            let downloaded_mb = self.downloaded.load(Ordering::Relaxed) as f64 / (1024.0 * 1024.0);
+            downloaded_mb / elapsed
+        } else {
+            0.0
+        }
+    }
+
+    // Estimate time remaining in seconds
+    pub fn eta_seconds(&self) -> u64 {
+        let speed = self.speed_mbps();
+        let remaining_mb = (self.total_size.load(Ordering::Relaxed) - self.downloaded.load(Ordering::Relaxed)) as f64 / (1024.0 * 1024.0);
+        if speed > 0.0 {
+            (remaining_mb / speed) as u64
+        } else {
+            0
+        }
+    }
+
+    // Get completion percentage
+    pub fn completion_percentage(&self) -> f64 {
+        let total = self.total_size.load(Ordering::Relaxed);
+        if total > 0 {
+            (self.downloaded.load(Ordering::Relaxed) as f64 / total as f64) * 100.0
+        } else {
+            0.0
+        }
+    }
+}
+
+pub struct FastDownloader {
+    client: Client,
+    config: DownloadConfig,
+    semaphore: Arc<Semaphore>, // Controls concurrent connections
+}
+
+impl FastDownloader {
+    pub fn new(config: DownloadConfig) -> Result<Self, Box<dyn std::error::Error>> {
+        // Create optimized HTTP client with connection pooling
+        let client = Client::builder()
+            .timeout(Duration::from_secs(config.timeout_seconds))
+            .user_agent("FastDL-Core/1.0 (High-Performance Downloader)")
+            .pool_max_idle_per_host(config.connections)
+            .pool_idle_timeout(Duration::from_secs(30))
+            .tcp_keepalive(Duration::from_secs(60))
+            .build()?;
+
+        // Create semaphore to limit concurrent connections
+        let semaphore = Arc::new(Semaphore::new(config.connections));
+
+        Ok(Self { client, config, semaphore })
+    }
+
+    // Extract filename from URL with better handling
+    fn extract_filename(&self, url: &str) -> String {
+        if let Ok(parsed_url) = url::Url::parse(url) {
+            if let Some(segments) = parsed_url.path_segments() {
+                if let Some(last_segment) = segments.last() {
+                    if !last_segment.is_empty() {
+                        let decoded = urlencoding::decode(last_segment).unwrap_or_default();
+                        let filename = decoded.to_string();
+                        // Remove query parameters if present
+                        if let Some(clean_name) = filename.split('?').next() {
+                            if !clean_name.is_empty() {
+                                return clean_name.to_string();
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Generate a meaningful name based on URL and timestamp
+        let url_hash = url.chars().fold(0u32, |acc, c| acc.wrapping_add(c as u32));
+        format!("download_{}_{}", url_hash, std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs())
+    }
+
+    // Check if server supports range requests
+    async fn check_range_support(&self, url: &str) -> Result<bool, Box<dyn std::error::Error>> {
+        let response = self.client.head(url).send().await?;
+        
+        if !response.status().is_success() {
+            return Err(format!("HTTP error: {}", response.status()).into());
+        }
+
+        // Check for Accept-Ranges header
+        Ok(response.headers()
+            .get("accept-ranges")
+            .and_then(|v| v.to_str().ok())
+            .map(|v| v.to_lowercase())
+            .as_deref() == Some("bytes"))
+    }
+
+    // Get file information with enhanced error handling
+    async fn get_file_info(&self, url: &str) -> Result<(u64, String, bool), Box<dyn std::error::Error>> {
+        let mut retries = 0;
+        let max_retries = 3;
+
+        loop {
+            match self.client.head(url).send().await {
+                Ok(response) => {
+                    if !response.status().is_success() {
+                        return Err(format!("HTTP error: {}", response.status()).into());
+                    }
+
+                    // Get file size
+                    let file_size = response
+                        .headers()
+                        .get("content-length")
+                        .and_then(|v| v.to_str().ok())
+                        .and_then(|v| v.parse::<u64>().ok())
+                        .unwrap_or(0);
+
+                    // Extract filename
+                    let filename = self.extract_filename(url);
+
+                    // Check range support
+                    let supports_ranges = response.headers()
+                        .get("accept-ranges")
+                        .and_then(|v| v.to_str().ok())
+                        .map(|v| v.to_lowercase())
+                        .as_deref() == Some("bytes");
+
+                    return Ok((file_size, filename, supports_ranges));
+                }
+                Err(e) => {
+                    retries += 1;
+                    if retries >= max_retries {
+                        return Err(format!("Failed to get file info after {} retries: {}", max_retries, e).into());
+                    }
+                    
+                    if self.config.verbose {
+                        println!("Retry {}/{} for file info: {}", retries, max_retries, e);
+                    }
+                    
+                    // Exponential backoff
+                    sleep(Duration::from_millis(1000 * (1 << retries))).await;
+                }
+            }
+        }
+    }
+
+    // Create chunks for multi-threaded downloading
+    fn create_chunks(&self, file_size: u64, supports_ranges: bool) -> Vec<ChunkInfo> {
+        if !supports_ranges || file_size == 0 {
+            // Single chunk for servers that don't support ranges
+            return vec![ChunkInfo {
+                start: 0,
+                end: file_size.saturating_sub(1),
+                size: file_size,
+                completed: false,
+                retries: 0,
+            }];
+        }
+
+        let chunk_size = (self.config.chunk_size_mb * 1024 * 1024) as u64;
+        let num_chunks = std::cmp::min(
+            self.config.connections as u64,
+            (file_size + chunk_size - 1) / chunk_size
+        );
+
+        let mut chunks = Vec::new();
+        let chunk_size_actual = file_size / num_chunks;
+        let remainder = file_size % num_chunks;
+
+        for i in 0..num_chunks {
+            let start = i * chunk_size_actual;
+            let mut end = start + chunk_size_actual - 1;
+            
+            // Add remainder to the last chunk
+            if i == num_chunks - 1 {
+                end += remainder;
+            }
+
+            chunks.push(ChunkInfo {
+                start,
+                end,
+                size: end - start + 1,
+                completed: false,
+                retries: 0,
+            });
+        }
+
+        chunks
+    }
+
+    // Download a single chunk with retry logic
+    async fn download_chunk(
+        &self,
+        url: &str,
+        chunk: ChunkInfo,
+        file_path: &PathBuf,
+        stats: Arc<DownloadStats>,
+    ) -> Result<ChunkInfo, Box<dyn std::error::Error>> {
+        let mut current_chunk = chunk;
+        
+        // Retry loop for this chunk
+        while current_chunk.retries < self.config.retries {
+            // Acquire semaphore permit to limit concurrent connections
+            let _permit = self.semaphore.acquire().await?;
+            
+            match self.download_chunk_attempt(url, &current_chunk, file_path, stats.clone()).await {
+                Ok(_) => {
+                    current_chunk.completed = true;
+                    stats.chunks_completed.fetch_add(1, Ordering::Relaxed);
+                    return Ok(current_chunk);
+                }
+                Err(e) => {
+                    current_chunk.retries += 1;
+                    if self.config.verbose {
+                        println!("Chunk {}-{} failed (attempt {}): {}", 
+                            current_chunk.start, current_chunk.end, current_chunk.retries, e);
+                    }
+                    
+                    if current_chunk.retries < self.config.retries {
+                        // Exponential backoff with jitter
+                        let delay = Duration::from_millis(500 * (1 << current_chunk.retries) + 
+                            (fastrand::u64(0..1000)));
+                        sleep(delay).await;
+                    }
+                }
+            }
+        }
+
+        Err(format!("Chunk {}-{} failed after {} retries", 
+            current_chunk.start, current_chunk.end, self.config.retries).into())
+    }
+
+    // Single attempt to download a chunk
+    async fn download_chunk_attempt(
+        &self,
+        url: &str,
+        chunk: &ChunkInfo,
+        file_path: &PathBuf,
+        stats: Arc<DownloadStats>,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        // Create range request
+        let mut request = self.client.get(url);
+        
+        if chunk.start > 0 || chunk.end < chunk.start + chunk.size {
+            request = request.header("Range", format!("bytes={}-{}", chunk.start, chunk.end));
+        }
+
+        // Send request with per-chunk timeout
+        let response = tokio::time::timeout(
+            Duration::from_secs(self.config.timeout_seconds),
+            request.send()
+        ).await??;
+
+        if !response.status().is_success() && response.status().as_u16() != 206 {
+            return Err(format!("HTTP error: {}", response.status()).into());
+        }
+
+        // Open file for writing at the specific position
+        let mut file = std::fs::OpenOptions::new()
+            .create(true)
+            .write(true)
+            .open(file_path)?;
+        
+        file.seek(SeekFrom::Start(chunk.start))?;
+
+        // Stream the chunk data
+        let mut stream = response.bytes_stream();
+        let mut chunk_downloaded = 0u64;
+
+        while let Some(chunk_result) = stream.next().await {
+            let data = chunk_result?;
+            file.write_all(&data)?;
+            
+            let bytes_written = data.len() as u64;
+            chunk_downloaded += bytes_written;
+            stats.downloaded.fetch_add(bytes_written, Ordering::Relaxed);
+
+            // Progress reporting for verbose mode
+            if self.config.verbose && chunk_downloaded % (256 * 1024) == 0 {
+                let progress = stats.completion_percentage();
+                let speed = stats.speed_mbps();
+                let eta = stats.eta_seconds();
+                print!("\rProgress: {:.1}% | Speed: {:.2} MB/s | ETA: {}s", 
+                    progress, speed, eta);
+                io::stdout().flush().ok();
+            }
+        }
+
+        file.flush()?;
+        Ok(())
+    }
+
+    // Multi-threaded download with proper chunk management
+    async fn download_multithread(
+        &self,
+        url: &str,
+        file_path: &PathBuf,
+        file_size: u64,
+        supports_ranges: bool,
+        stats: Arc<DownloadStats>,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        // Create chunks for parallel downloading
+        let chunks = self.create_chunks(file_size, supports_ranges);
+        stats.chunks_total.store(chunks.len() as u64, Ordering::Relaxed);
+
+        if self.config.verbose {
+            println!("Using {} chunks for parallel download", chunks.len());
+        }
+
+        // Create the output file
+        if file_size > 0 {
+            let file = std::fs::File::create(file_path)?;
+            file.set_len(file_size)?;
+        }
+
+        // Download chunks concurrently
+        let mut handles = Vec::new();
+        
+        for chunk in chunks {
+            let url = url.to_string();
+            let file_path = file_path.clone();
+            let stats = stats.clone();
+            let downloader = self.clone();
+
+            let handle = tokio::spawn(async move {
+                downloader.download_chunk(&url, chunk, &file_path, stats).await
+            });
+            
+            handles.push(handle);
+        }
+
+        // Wait for all chunks to complete
+        let mut all_success = true;
+        let mut error_messages = Vec::new();
+
+        for handle in handles {
+            match handle.await {
+                Ok(Ok(_)) => {
+                    // Chunk completed successfully
+                }
+                Ok(Err(e)) => {
+                    all_success = false;
+                    error_messages.push(e.to_string());
+                }
+                Err(e) => {
+                    all_success = false;
+                    error_messages.push(format!("Task error: {}", e));
+                }
+            }
+        }
+
+        if !all_success {
+            return Err(format!("Some chunks failed: {}", error_messages.join("; ")).into());
+        }
+
+        Ok(())
+    }
+
+    // Fallback single-stream download for servers without range support
+    async fn download_single_stream(
+        &self,
+        url: &str,
+        file_path: &PathBuf,
+        stats: Arc<DownloadStats>,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let response = self.client.get(url).send().await?;
+        
+        if !response.status().is_success() {
+            return Err(format!("HTTP error: {}", response.status()).into());
+        }
+
+        let mut file = std::fs::File::create(file_path)?;
+        let mut stream = response.bytes_stream();
+
+        while let Some(chunk_result) = stream.next().await {
+            let chunk = chunk_result?;
+            file.write_all(&chunk)?;
+            stats.downloaded.fetch_add(chunk.len() as u64, Ordering::Relaxed);
+
+            // Progress reporting
+            if self.config.verbose {
+                let downloaded = stats.downloaded.load(Ordering::Relaxed);
+                let total = stats.total_size.load(Ordering::Relaxed);
+                if total > 0 {
+                    let percent = (downloaded as f64 / total as f64) * 100.0;
+                    let speed = stats.speed_mbps();
+                    print!("\rProgress: {:.1}% | Speed: {:.2} MB/s", percent, speed);
+                    io::stdout().flush().ok();
+                }
+            }
+        }
+
+        file.flush()?;
+        if self.config.verbose {
+            println!(); // New line after progress
+        }
+        Ok(())
+    }
+
+    // Main download function for a single file
+    pub async fn download_file(&self, url: &str) -> DownloadResult {
+        let start_time = Instant::now();
+        
+        if self.config.verbose {
+            println!("Analyzing: {}", url);
+        }
+
+        // Get file information
+        let (file_size, filename, supports_ranges) = match self.get_file_info(url).await {
+            Ok(info) => info,
+            Err(e) => {
+                return DownloadResult {
+                    url: url.to_string(),
+                    filename: "unknown".to_string(),
+                    success: false,
+                    error: Some(format!("Failed to get file info: {}", e)),
+                    total_time_seconds: start_time.elapsed().as_secs_f64(),
+                    average_speed_mbps: 0.0,
+                    file_size: 0,
+                };
+            }
+        };
+
+        let output_path = PathBuf::from(&self.config.output_dir).join(&filename);
+        
+        // Create output directory if needed
+        if let Some(parent) = output_path.parent() {
+            if let Err(e) = std::fs::create_dir_all(parent) {
+                return DownloadResult {
+                    url: url.to_string(),
+                    filename,
+                    success: false,
+                    error: Some(format!("Failed to create output directory: {}", e)),
+                    total_time_seconds: start_time.elapsed().as_secs_f64(),
+                    average_speed_mbps: 0.0,
+                    file_size,
+                };
+            }
+        }
+
+        let stats = Arc::new(DownloadStats::new());
+        stats.total_size.store(file_size, Ordering::Relaxed);
+
+        if self.config.verbose {
+            println!("Downloading: {} -> {}", filename, output_path.display());
+            if file_size > 0 {
+                println!("File size: {} bytes", file_size);
+            }
+            println!("Range support: {}", if supports_ranges { "Yes" } else { "No" });
+        }
+
+        // Choose download strategy based on range support and file size
+        let result = if supports_ranges && file_size > 1024 * 1024 && self.config.connections > 1 {
+            // Multi-threaded download for large files with range support
+            self.download_multithread(url, &output_path, file_size, supports_ranges, stats.clone()).await
+        } else {
+            // Single-stream download for small files or servers without range support
+            self.download_single_stream(url, &output_path, stats.clone()).await
+        };
+
+        let total_time = start_time.elapsed().as_secs_f64();
+        let downloaded = stats.downloaded.load(Ordering::Relaxed);
+        let avg_speed = if total_time > 0.0 {
+            (downloaded as f64 / (1024.0 * 1024.0)) / total_time
+        } else {
+            0.0
+        };
+
+        match result {
+            Ok(_) => {
+                if self.config.verbose {
+                    println!("✓ Download completed: {}", filename);
+                    println!("  Time: {:.2}s | Speed: {:.2} MB/s", total_time, avg_speed);
+                }
+                DownloadResult {
+                    url: url.to_string(),
+                    filename,
+                    success: true,
+                    error: None,
+                    total_time_seconds: total_time,
+                    average_speed_mbps: avg_speed,
+                    file_size: downloaded,
+                }
+            }
+            Err(e) => {
+                if self.config.verbose {
+                    println!("✗ Download failed: {}", e);
+                }
+                // Clean up partial file
+                let _ = std::fs::remove_file(&output_path);
+                DownloadResult {
+                    url: url.to_string(),
+                    filename,
+                    success: false,
+                    error: Some(e.to_string()),
+                    total_time_seconds: total_time,
+                    average_speed_mbps: avg_speed,
+                    file_size: downloaded,
+                }
+            }
+        }
+    }
+
+    // Download multiple files with controlled concurrency
+    pub async fn download_batch(&self, urls: Vec<String>) -> Vec<DownloadResult> {
+        let semaphore = Arc::new(Semaphore::new(self.config.max_concurrent));
+        let mut handles = Vec::new();
+        
+        for url in urls {
+            let semaphore = semaphore.clone();
+            let downloader = self.clone();
+            
+            let handle = tokio::spawn(async move {
+                let _permit = semaphore.acquire().await.unwrap();
+                downloader.download_file(&url).await
+            });
+            
+            handles.push(handle);
+        }
+
+        let mut results = Vec::new();
+        for handle in handles {
+            match handle.await {
+                Ok(result) => results.push(result),
+                Err(e) => {
+                    results.push(DownloadResult {
+                        url: "unknown".to_string(),
+                        filename: "unknown".to_string(),
+                        success: false,
+                        error: Some(format!("Task error: {}", e)),
+                        total_time_seconds: 0.0,
+                        average_speed_mbps: 0.0,
+                        file_size: 0,
+                    });
+                }
+            }
+        }
+
+        results
+    }
+}
+
+// Implement Clone for FastDownloader to enable sharing across tasks
+impl Clone for FastDownloader {
+    fn clone(&self) -> Self {
+        Self {
+            client: self.client.clone(),
+            config: DownloadConfig {
+                urls: self.config.urls.clone(),
+                output_dir: self.config.output_dir.clone(),
+                connections: self.config.connections,
+                chunk_size_mb: self.config.chunk_size_mb,
+                timeout_seconds: self.config.timeout_seconds,
+                retries: self.config.retries,
+                max_concurrent: self.config.max_concurrent,
+                url_file: self.config.url_file.clone(),
+                verbose: self.config.verbose,
+            },
+            semaphore: self.semaphore.clone(),
+        }
+    }
+}
+
+// Add fastrand dependency for jitter in retry delays
+mod fastrand {
+    use std::collections::hash_map::DefaultHasher;
+    use std::hash::{Hash, Hasher};
+    use std::sync::atomic::{AtomicU64, Ordering};
+    
+    static SEED: AtomicU64 = AtomicU64::new(1);
+    
+    pub fn u64(range: std::ops::Range<u64>) -> u64 {
+        let mut hasher = DefaultHasher::new();
+        std::thread::current().id().hash(&mut hasher);
+        std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default().as_nanos().hash(&mut hasher);
+        SEED.fetch_add(1, Ordering::Relaxed).hash(&mut hasher);
+        
+        let hash = hasher.finish();
+        range.start + (hash % (range.end - range.start))
+    }
+}
+
+// Main entry point
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let args: Vec<String> = env::args().collect();
+    
+    if args.len() < 2 {
+        eprintln!("Usage: fastdl-core <config-json>");
+        eprintln!("Example: fastdl-core '{{\"urls\":[\"https://example.com/file.zip\"],\"output_dir\":\"./downloads\",\"connections\":8,\"chunk_size_mb\":1,\"timeout_seconds\":30,\"retries\":3,\"max_concurrent\":3,\"verbose\":true}}'");
+        std::process::exit(1);
+    }
+
+    // Parse configuration from JSON argument
+    let config: DownloadConfig = serde_json::from_str(&args[1])
+        .map_err(|e| format!("Invalid JSON config: {}", e))?;
+
+    let downloader = FastDownloader::new(config)?;
+
+    // Determine what to download
+    let urls = if let Some(url_file) = &downloader.config.url_file {
+        // Read URLs from file
+        let content = std::fs::read_to_string(url_file)?;
+        content.lines()
+            .map(|line| line.trim().to_string())
+            .filter(|line| !line.is_empty() && !line.starts_with('#'))
+            .collect()
+    } else {
+        downloader.config.urls.clone()
+    };
+
+    if urls.is_empty() {
+        eprintln!("No URLs to download");
+        std::process::exit(1);
+    }
+
+    // Execute downloads
+    let results = if urls.len() == 1 {
+        vec![downloader.download_file(&urls[0]).await]
+    } else {
+        downloader.download_batch(urls).await
+    };
+
+    // Output final results as JSON
+    println!("{}", serde_json::to_string_pretty(&results)?);
+
+    // Exit with appropriate code
+    let success_count = results.iter().filter(|r| r.success).count();
+    if success_count == results.len() {
+        std::process::exit(0);
+    } else {
+        std::process::exit(1);
+    }
+}
+EOF
+    
+    # Build in release mode for maximum performance
+    show_spinner &
+    local spinner_pid=$!
+    
+    # Source cargo environment to ensure it's available
+    source "$HOME/.cargo/env" 2>/dev/null || true
+    
+    # Build with better error reporting
+    if RUST_BACKTRACE=1 cargo build --release 2>"$TEMP_DIR/build.log"; then
+        kill $spinner_pid 2>/dev/null || true
+        wait $spinner_pid 2>/dev/null || true
+        log_success "Core engine built successfully"
+    else
+        kill $spinner_pid 2>/dev/null || true
+        wait $spinner_pid 2>/dev/null || true
+        log_error "Failed to build core engine"
+        log_info "Build log:"
+        cat "$TEMP_DIR/build.log"
+        exit 1
+    fi
+    
+    # Copy the binary to FastDL directory
+    mkdir -p "$FASTDL_DIR"
+    cp target/release/fastdl-core "$FASTDL_CORE"
+    chmod +x "$FASTDL_CORE"
+}
+
+# Initialize FastDL configuration
+init_config() {
+    log_info "Initializing FastDL configuration..."
+    
+    mkdir -p "$FASTDL_DIR"
+    mkdir -p "$DOWNLOADS_DIR"
+    
+    # Create default configuration
+    cat > "$FASTDL_CONFIG" << EOF
+{
+    "default_connections": 8,
+    "default_chunk_size_mb": 1,
+    "default_timeout_seconds": 30,
+    "default_retries": 3,
+    "default_max_concurrent": 3,
+    "downloads_directory": "$DOWNLOADS_DIR",
+    "verbose": false,
+    "auto_organize": true,
+    "resume_downloads": true
+}
+EOF
+    
+    log_success "Configuration initialized"
+}
+
+# Setup function - called on first run or when --setup is used
+setup_fastdl() {
+    log_header "FastDL Setup"
+    
+    log_info "Setting up FastDL v$FASTDL_VERSION for $(detect_system)"
+    
+    # Install dependencies
+    install_dependencies
+    
+    # Install Rust
+    install_rust
+    
+    # Build core
+    build_core
+    
+    # Initialize config
+    init_config
+    
+    # Create desktop entry on Linux
+    if [[ "$(uname -s)" == "Linux" ]] && [[ -d "$HOME/.local/share/applications" ]]; then
+        cat > "$HOME/.local/share/applications/fastdl.desktop" << EOF
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=FastDL
+Comment=High-Performance File Downloader
+Exec=$0
+Icon=folder-download
+Terminal=true
+Categories=Network;FileTransfer;
+EOF
+    fi
+    
+    log_success "FastDL setup completed successfully!"
+    echo
+    log_info "You can now run 'fastdl' from anywhere"
+    log_info "Downloads will be saved to: $DOWNLOADS_DIR"
+}
+
+# Check if FastDL is properly installed
+check_installation() {
+    if [[ ! -f "$FASTDL_CORE" ]] || [[ ! -f "$FASTDL_CONFIG" ]]; then
         return 1
     fi
-
-    echo "Detected USB WiFi adapters:"
-    local adapter_array=()
-    local i=1
-    while IFS='|' read -r vendor_product info; do
-        IFS=':' read -r name monitor inject rating <<< "$info"
-        
-        local status_color=""
-        case "$rating" in
-            "recommended") status_color="$GREEN" ;;
-            "good") status_color="$YELLOW" ;;
-            *) status_color="$NC" ;;
-        esac
-        
-        echo -e "$i) ${status_color}$name ($vendor_product)${NC} - Monitor: $monitor, Injection: $inject [$rating]"
-        adapter_array+=("$vendor_product")
-        ((i++))
-    done <<< "$adapters_output"
-    
-    echo "$i) Skip USB passthrough"
-    
-    while true; do
-        read -p "Select adapter (1-$i): " -r selection
-        if [[ "$selection" =~ ^[0-9]+$ ]] && [[ "$selection" -ge 1 ]] && [[ "$selection" -le $i ]]; then
-            if [[ "$selection" -eq $i ]]; then
-                return 1
-            else
-                local selected_adapter="${adapter_array[$((selection-1))]}"
-                USB_VENDOR="${selected_adapter%:*}"
-                USB_PRODUCT="${selected_adapter#*:}"
-                return 0
-            fi
-        else
-            print_error "Invalid selection."
-        fi
-    done
+    return 0
 }
 
-# Updated interactive new VM setup with download option
-setup_new_vm() {
-    print_info "Setting up new VM..."
+# Load configuration
+load_config() {
+    if [[ -f "$FASTDL_CONFIG" ]]; then
+        # Parse JSON config (simple extraction for bash)
+        DEFAULT_CONNECTIONS=$(grep -o '"default_connections":[[:space:]]*[0-9]*' "$FASTDL_CONFIG" | grep -o '[0-9]*$' || echo "8")
+        DEFAULT_CHUNK_SIZE=$(grep -o '"default_chunk_size_mb":[[:space:]]*[0-9]*' "$FASTDL_CONFIG" | grep -o '[0-9]*$' || echo "1")
+        DEFAULT_TIMEOUT=$(grep -o '"default_timeout_seconds":[[:space:]]*[0-9]*' "$FASTDL_CONFIG" | grep -o '[0-9]*$' || echo "30")
+        DEFAULT_RETRIES=$(grep -o '"default_retries":[[:space:]]*[0-9]*' "$FASTDL_CONFIG" | grep -o '[0-9]*$' || echo "3")
+        DEFAULT_MAX_CONCURRENT=$(grep -o '"default_max_concurrent":[[:space:]]*[0-9]*' "$FASTDL_CONFIG" | grep -o '[0-9]*$' || echo "3")
+        DOWNLOADS_DIR=$(grep -o '"downloads_directory":[[:space:]]*"[^"]*"' "$FASTDL_CONFIG" | sed 's/.*"\([^"]*\)".*/\1/' || echo "$HOME/Downloads/FastDL")
+    else
+        # Fallback defaults
+        DEFAULT_CONNECTIONS=8
+        DEFAULT_CHUNK_SIZE=1
+        DEFAULT_TIMEOUT=30
+        DEFAULT_RETRIES=3
+        DEFAULT_MAX_CONCURRENT=3
+        DOWNLOADS_DIR="$HOME/Downloads/FastDL"
+    fi
+}
 
-    # Get VM name
-    while [[ -z "$VM_NAME" ]]; do
-        read -p "Enter VM name: " -r VM_NAME
-    done
+# Validate URL
+is_valid_url() {
+    local url="$1"
+    if [[ "$url" =~ ^https?:// ]]; then
+        return 0
+    fi
+    return 1
+}
 
-    # Ask for ISO source
-    echo "Choose ISO source:"
-    echo "1) Use existing ISO file"
-    echo "2) Download ISO automatically"
+# Format file size
+format_size() {
+    local size=$1
+    if [[ $size -gt 1073741824 ]]; then
+        echo "$(( size / 1073741824 )) GB"
+    elif [[ $size -gt 1048576 ]]; then
+        echo "$(( size / 1048576 )) MB"
+    elif [[ $size -gt 1024 ]]; then
+        echo "$(( size / 1024 )) KB"
+    else
+        echo "$size B"
+    fi
+}
 
+# Download single file
+download_single() {
+    local url="$1"
+    local output_dir="${2:-$DOWNLOADS_DIR}"
+    local connections="${3:-$DEFAULT_CONNECTIONS}"
+    local chunk_size="${4:-$DEFAULT_CHUNK_SIZE}"
+    local timeout="${5:-$DEFAULT_TIMEOUT}"
+    local retries="${6:-$DEFAULT_RETRIES}"
+    local verbose="${7:-false}"
+    
+    log_info "Starting download..."
+    log_info "URL: $url"
+    log_info "Output: $output_dir"
+    log_info "Connections: $connections"
+    
+    # Create JSON configuration for the core
+    local config=$(cat << EOF
+{
+    "urls": ["$url"],
+    "output_dir": "$output_dir",
+    "connections": $connections,
+    "chunk_size_mb": $chunk_size,
+    "timeout_seconds": $timeout,
+    "retries": $retries,
+    "max_concurrent": 1,
+    "verbose": $verbose
+}
+EOF
+)
+    
+    # Execute the core downloader
+    mkdir -p "$output_dir"
+    
+    if "$FASTDL_CORE" "$config"; then
+        log_success "Download completed successfully!"
+        log_info "File saved to: $output_dir"
+    else
+        log_error "Download failed"
+        return 1
+    fi
+}
+
+# Download from file list
+download_batch() {
+    local url_file="$1"
+    local output_dir="${2:-$DOWNLOADS_DIR}"
+    local connections="${3:-$DEFAULT_CONNECTIONS}"
+    local max_concurrent="${4:-$DEFAULT_MAX_CONCURRENT}"
+    local verbose="${5:-false}"
+    
+    if [[ ! -f "$url_file" ]]; then
+        log_error "URL file not found: $url_file"
+        return 1
+    fi
+    
+    local url_count=$(grep -c -v '^[[:space:]]*$\|^#' "$url_file" || echo "0")
+    
+    log_info "Starting batch download..."
+    log_info "URLs: $url_count"
+    log_info "Output: $output_dir"
+    log_info "Connections per file: $connections"
+    log_info "Concurrent downloads: $max_concurrent"
+    
+    # Create JSON configuration for the core
+    local config=$(cat << EOF
+{
+    "urls": [],
+    "output_dir": "$output_dir",
+    "connections": $connections,
+    "chunk_size_mb": $DEFAULT_CHUNK_SIZE,
+    "timeout_seconds": $DEFAULT_TIMEOUT,
+    "retries": $DEFAULT_RETRIES,
+    "max_concurrent": $max_concurrent,
+    "url_file": "$url_file",
+    "verbose": $verbose
+}
+EOF
+)
+    
+    # Execute the core downloader
+    mkdir -p "$output_dir"
+    
+    if "$FASTDL_CORE" "$config"; then
+        log_success "Batch download completed!"
+        log_info "Files saved to: $output_dir"
+    else
+        log_error "Batch download failed"
+        return 1
+    fi
+}
+
+# Interactive menu system
+show_main_menu() {
+    clear
+    echo -e "${CYAN}${BOLD}"
+    echo "  ╔═══════════════════════════════════════╗"
+    echo "  ║        FastDL v$FASTDL_VERSION        ║"
+    echo "  ║    High-Performance File Downloader   ║"
+    echo "  ║  Engineered by 0xb0rn3 | Ig: theehiv3 ║"
+    echo "  ╚═══════════════════════════════════════╝"
+    echo -e "${NC}"
+    echo
+    echo -e "${BOLD}Select an option:${NC}"
+    echo
+    echo "  1) Download Single File"
+    echo "  2) Download Multiple Files (from list)"
+    echo "  3) Configuration"
+    echo "  4) Download History"
+    echo "  5) Help & About"
+    echo "  6) Exit"
+    echo
+    echo -n "Enter your choice [1-6]: "
+}
+
+# Single file download menu
+single_download_menu() {
+    clear
+    log_header "Single File Download"
+    
+    echo -n "Enter URL: "
+    read -r url
+    
+    if ! is_valid_url "$url"; then
+        log_error "Invalid URL format"
+        echo "Press Enter to continue..."
+        read -r
+        return
+    fi
+    
+    echo
+    echo "Advanced options (press Enter for defaults):"
+    echo -n "Output directory [$DOWNLOADS_DIR]: "
+    read -r output_dir
+    output_dir="${output_dir:-$DOWNLOADS_DIR}"
+    
+    echo -n "Number of connections [$DEFAULT_CONNECTIONS]: "
+    read -r connections
+    connections="${connections:-$DEFAULT_CONNECTIONS}"
+    
+    echo -n "Verbose output? [y/N]: "
+    read -r verbose_input
+    local verbose="false"
+    if [[ "$verbose_input" =~ ^[Yy] ]]; then
+        verbose="true"
+    fi
+    
+    echo
+    download_single "$url" "$output_dir" "$connections" "$DEFAULT_CHUNK_SIZE" "$DEFAULT_TIMEOUT" "$DEFAULT_RETRIES" "$verbose"
+    
+    echo
+    echo "Press Enter to continue..."
+    read -r
+}
+
+# Batch download menu
+batch_download_menu() {
+    clear
+    log_header "Batch Download"
+    
+    echo "You can provide a file containing URLs (one per line)"
+    echo "Lines starting with # are treated as comments"
+    echo
+    echo -n "Enter path to URL file: "
+    read -r url_file
+    
+    if [[ ! -f "$url_file" ]]; then
+        log_error "File not found: $url_file"
+        echo "Press Enter to continue..."
+        read -r
+        return
+    fi
+    
+    echo
+    echo "Advanced options (press Enter for defaults):"
+    echo -n "Output directory [$DOWNLOADS_DIR]: "
+    read -r output_dir
+    output_dir="${output_dir:-$DOWNLOADS_DIR}"
+    
+    echo -n "Connections per file [$DEFAULT_CONNECTIONS]: "
+    read -r connections
+    connections="${connections:-$DEFAULT_CONNECTIONS}"
+    
+    echo -n "Max concurrent downloads [$DEFAULT_MAX_CONCURRENT]: "
+    read -r max_concurrent
+    max_concurrent="${max_concurrent:-$DEFAULT_MAX_CONCURRENT}"
+    
+    echo -n "Verbose output? [y/N]: "
+    read -r verbose_input
+    local verbose="false"
+    if [[ "$verbose_input" =~ ^[Yy] ]]; then
+        verbose="true"
+    fi
+    
+    echo
+    download_batch "$url_file" "$output_dir" "$connections" "$max_concurrent" "$verbose"
+    
+    echo
+    echo "Press Enter to continue..."
+    read -r
+}
+
+# Configuration menu
+config_menu() {
+    clear
+    log_header "Configuration"
+    
+    load_config
+    
+    echo "Current configuration:"
+    echo "  Default connections: $DEFAULT_CONNECTIONS"
+    echo "  Default chunk size: ${DEFAULT_CHUNK_SIZE}MB"
+    echo "  Default timeout: ${DEFAULT_TIMEOUT}s"
+    echo "  Default retries: $DEFAULT_RETRIES"
+    echo "  Max concurrent: $DEFAULT_MAX_CONCURRENT"
+    echo "  Downloads directory: $DOWNLOADS_DIR"
+    echo
+    echo "1) Change defaults"
+    echo "2) Open downloads directory"
+    echo "3) Reset to defaults"
+    echo "4) Back to main menu"
+    echo
+    echo -n "Enter your choice [1-4]: "
+    read -r choice
+    
+    case "$choice" in
+        1)
+            echo
+            echo "Enter new values (press Enter to keep current):"
+            
+            echo -n "Default connections [$DEFAULT_CONNECTIONS]: "
+            read -r new_connections
+            connections="${new_connections:-$DEFAULT_CONNECTIONS}"
+            
+            echo -n "Default chunk size MB [$DEFAULT_CHUNK_SIZE]: "
+            read -r new_chunk_size
+            chunk_size="${new_chunk_size:-$DEFAULT_CHUNK_SIZE}"
+            
+            echo -n "Default timeout seconds [$DEFAULT_TIMEOUT]: "
+            read -r new_timeout
+            timeout="${new_timeout:-$DEFAULT_TIMEOUT}"
+            
+            echo -n "Default retries [$DEFAULT_RETRIES]: "
+            read -r new_retries
+            retries="${new_retries:-$DEFAULT_RETRIES}"
+            
+            echo -n "Max concurrent downloads [$DEFAULT_MAX_CONCURRENT]: "
+            read -r new_max_concurrent
+            max_concurrent="${new_max_concurrent:-$DEFAULT_MAX_CONCURRENT}"
+            
+            # Update configuration file
+            cat > "$FASTDL_CONFIG" << EOF
+{
+    "default_connections": $connections,
+    "default_chunk_size_mb": $chunk_size,
+    "default_timeout_seconds": $timeout,
+    "default_retries": $retries,
+    "default_max_concurrent": $max_concurrent,
+    "downloads_directory": "$DOWNLOADS_DIR",
+    "verbose": false,
+    "auto_organize": true,
+    "resume_downloads": true
+}
+EOF
+            log_success "Configuration updated!"
+            ;;
+        2)
+            if command_exists xdg-open; then
+                xdg-open "$DOWNLOADS_DIR" >/dev/null 2>&1 &
+            elif command_exists open; then
+                open "$DOWNLOADS_DIR" >/dev/null 2>&1 &
+            else
+                log_info "Downloads directory: $DOWNLOADS_DIR"
+            fi
+            ;;
+        3)
+            init_config
+            log_success "Configuration reset to defaults!"
+            ;;
+        4)
+            return
+            ;;
+    esac
+    
+    echo
+    echo "Press Enter to continue..."
+    read -r
+}
+
+# Help menu
+help_menu() {
+    clear
+    log_header "Help & About"
+    
+    echo -e "${BOLD}FastDL v$FASTDL_VERSION${NC}"
+    echo "High-Performance Cross-Platform File Downloader"
+    echo
+    echo -e "${BOLD}Features:${NC}"
+    echo "  • Multi-connection downloads for maximum speed"
+    echo "  • Concurrent downloading of multiple files"
+    echo "  • Automatic resume of interrupted downloads"
+    echo "  • Smart chunk-based downloading"
+    echo "  • Cross-platform support (Linux, macOS, Windows)"
+    echo "  • Built with Rust for maximum performance"
+    echo
+    echo -e "${BOLD}Command Line Usage:${NC}"
+    echo "  fastdl                    - Interactive menu (current mode)"
+    echo "  fastdl <url>              - Download single file"
+    echo "  fastdl --file <file>      - Download from URL list"
+    echo "  fastdl --setup            - Run setup again"
+    echo "  fastdl --help             - Show help"
+    echo
+    echo -e "${BOLD}Configuration:${NC}"
+    echo "  Config file: $FASTDL_CONFIG"
+    echo "  Downloads:   $DOWNLOADS_DIR"
+    echo "  Core binary: $FASTDL_CORE"
+    echo
+    echo -e "${BOLD}URL List Format:${NC}"
+    echo "  One URL per line"
+    echo "  Lines starting with # are comments"
+    echo "  Empty lines are ignored"
+    echo
+    echo "Press Enter to continue..."
+    read -r
+}
+
+# Command line argument handling
+handle_args() {
+    case "${1:-}" in
+        --setup)
+            setup_fastdl
+            exit 0
+            ;;
+        --help|-h)
+            help_menu
+            exit 0
+            ;;
+        --file|-f)
+            if [[ -z "${2:-}" ]]; then
+                log_error "Please specify a file path"
+                exit 1
+            fi
+            load_config
+            download_batch "$2"
+            exit $?
+            ;;
+        http://*|https://*)
+            load_config
+            download_single "$1"
+            exit $?
+            ;;
+        "")
+            # No arguments - run interactive mode
+            ;;
+        *)
+            echo "FastDL v$FASTDL_VERSION - High-Performance File Downloader"
+            echo
+            echo "Usage:"
+            echo "  $0                    - Interactive menu"
+            echo "  $0 <url>              - Download single file"
+            echo "  $0 --file <file>      - Download from URL list"
+            echo "  $0 --setup            - Run setup"
+            echo "  $0 --help             - Show help"
+            exit 1
+            ;;
+    esac
+}
+
+# Main interactive loop
+interactive_mode() {
     while true; do
-        read -p "Select option (1-2): " -r iso_choice
-        case $iso_choice in
+        show_main_menu
+        read -r choice
+        
+        case "$choice" in
             1)
-                # Use existing ISO
-                while [[ -z "$ISO_PATH" || ! -f "$ISO_PATH" ]]; do
-                    read -p "Enter path to ISO file: " -r user_input
-                    # Sanitize the input
-                    local temp_path
-                    temp_path=$(echo "$user_input" | xargs)
-                    temp_path="${temp_path//\'/}"
-                    temp_path="${temp_path//\"/}"
-                    
-                    # FIX: Replaced unsafe `eval` with a safe way to handle tilde expansion.
-                    if [[ "${temp_path:0:1}" == "~" ]]; then
-                        ISO_PATH="$HOME${temp_path:1}"
-                    else
-                        ISO_PATH="$temp_path"
-                    fi
-
-                    if [[ ! -f "$ISO_PATH" ]]; then
-                        print_error "ISO file not found: '$ISO_PATH'"
-                        ISO_PATH=""
-                    fi
-                done
-
-                # Try to detect OS from filename
-                VM_OS_VARIANT=$(select_os_variant)
-                break
+                single_download_menu
                 ;;
             2)
-                # Download ISO
-                echo "Available distributions for download:"
-                local distros=()
-                local i=1
-                for distro in "${!ISO_URLS[@]}"; do
-                    echo "$i) $distro"
-                    distros+=("$distro")
-                    ((i++))
-                done
-
-                while true; do
-                    read -p "Select distribution (1-$((i-1))): " -r distro_choice
-                    if [[ "$distro_choice" =~ ^[0-9]+$ ]] && [[ "$distro_choice" -ge 1 ]] && [[ "$distro_choice" -lt $i ]]; then
-                        local selected_distro="${distros[$((distro_choice-1))]}"
-
-                        # Download the ISO
-                        if ISO_PATH=$(download_iso "$selected_distro"); then
-                            VM_OS_VARIANT="${OS_VARIANTS[$selected_distro]:-linux2022}"
-                            break 2
-                        else
-                            print_error "Failed to download $selected_distro"
-                            continue
-                        fi
-                    else
-                        print_error "Invalid selection"
-                    fi
-                done
+                batch_download_menu
                 ;;
-            *)
-                print_error "Invalid option. Please select 1 or 2."
+            3)
+                config_menu
                 ;;
-        esac
-    done
-
-    # Get system resources and recommendations
-    print_system_resources
-    local resources=$(get_system_resource_recommendations)
-    IFS=':' read -r rec_memory min_memory max_memory rec_cores min_cores max_cores <<< "$resources"
-
-    # Get memory
-    while [[ -z "$VM_MEMORY" ]]; do
-        read -p "Enter memory in MB (min: $min_memory, recommended: $rec_memory, max: $max_memory): " -r VM_MEMORY
-        if [[ ! "$VM_MEMORY" =~ ^[0-9]+$ ]] || [[ "$VM_MEMORY" -lt $min_memory ]] || [[ "$VM_MEMORY" -gt $max_memory ]]; then
-            print_error "Memory must be between $min_memory and $max_memory MB"
-            VM_MEMORY=""
-        fi
-    done
-
-    # Get cores
-    while [[ -z "$VM_CORES" ]]; do
-        read -p "Enter CPU cores (min: $min_cores, recommended: $rec_cores, max: $max_cores): " -r VM_CORES
-        if [[ ! "$VM_CORES" =~ ^[0-9]+$ ]] || [[ "$VM_CORES" -lt $min_cores ]] || [[ "$VM_CORES" -gt $max_cores ]]; then
-            print_error "Cores must be between $min_cores and $max_cores"
-            VM_CORES=""
-        fi
-    done
-
-    # Get disk size
-    while [[ -z "$VM_DISK_SIZE" ]]; do
-        read -p "Enter disk size in GB (minimum 20, recommended 40): " -r VM_DISK_SIZE
-        if [[ ! "$VM_DISK_SIZE" =~ ^[0-9]+$ ]] || [[ "$VM_DISK_SIZE" -lt 20 ]]; then
-            print_error "Disk size must be at least 20 GB"
-            VM_DISK_SIZE=""
-        fi
-    done
-}
-
-# Make bridge persistent
-make_persistent() {
-    local interface="$1"
-    local bridge="$2"
-    local vlan="$3"
-
-    print_info "Making bridge configuration persistent..."
-
-    if [[ "$DRY_RUN" == true ]]; then
-        print_info "[DRY RUN] Would create persistent network configuration"
-        return
-    fi
-
-    # Create netplan configuration (Ubuntu/Debian)
-    if command -v netplan &> /dev/null; then
-        local netplan_file="/etc/netplan/99-vm-isolation.yaml"
-        cat > "$netplan_file" << EOF
-network:
-  version: 2
-  ethernets:
-    $interface:
-      dhcp4: false
-  bridges:
-    $bridge:
-      interfaces: [$interface]
-      dhcp4: true
-      parameters:
-        stp: false
-  vlans:
-    ${bridge}.${vlan}:
-      id: $vlan
-      link: $bridge
-      addresses: [192.168.${vlan}.1/24]
-EOF
-        print_success "Created netplan configuration: $netplan_file"
-
-    # Create systemd-networkd configuration
-    else
-        local networkd_dir="/etc/systemd/network"
-        mkdir -p "$networkd_dir"
-
-        # Bridge configuration
-        cat > "$networkd_dir/99-$bridge.netdev" << EOF
-[NetDev]
-Name=$bridge
-Kind=bridge
-EOF
-
-        cat > "$networkd_dir/99-$bridge.network" << EOF
-[Match]
-Name=$bridge
-
-[Network]
-DHCP=yes
-IPForward=yes
-EOF
-
-        # Interface configuration
-        cat > "$networkd_dir/99-$interface.network" << EOF
-[Match]
-Name=$interface
-
-[Network]
-Bridge=$bridge
-EOF
-
-        # VLAN configuration
-        cat > "$networkd_dir/99-${bridge}.${vlan}.netdev" << EOF
-[NetDev]
-Name=${bridge}.${vlan}
-Kind=vlan
-
-[VLAN]
-Id=$vlan
-EOF
-
-        cat > "$networkd_dir/99-${bridge}.${vlan}.network" << EOF
-[Match]
-Name=${bridge}.${vlan}
-
-[Network]
-Address=192.168.${vlan}.1/24
-EOF
-
-        systemctl enable systemd-networkd
-        print_success "Created systemd-networkd configuration"
-    fi
-}
-
-# Show post-setup instructions
-show_post_setup_instructions() {
-    local vm_name="$1"
-    local has_network="$2"
-    local has_usb="$3"
-
-    print_success "VM Lab Isolation Setup Complete!"
-    echo
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo -e "${GREEN}✅ SETUP SUMMARY${NC}"
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo -e "VM Name: ${BLUE}$vm_name${NC}"
-
-    if [[ "$has_network" == true ]]; then
-        echo -e "Network: ${GREEN}Bridge networking with VLAN isolation${NC}"
-        echo "  - Bridge: $BRIDGE_NAME"
-        echo "  - VLAN: $VLAN_ID"
-        echo "  - Gateway: 192.168.${VLAN_ID}.1"
-    fi
-
-    if [[ "$has_usb" == true ]]; then
-        echo -e "USB WiFi: ${GREEN}$USB_VENDOR:$USB_PRODUCT passthrough enabled${NC}"
-    fi
-
-    echo
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo -e "${YELLOW}📋 NEXT STEPS${NC}"
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-
-    echo "1. Start your VM:"
-    echo "   virsh start $vm_name"
-    echo
-
-    if [[ "$has_network" == true ]]; then
-        echo "2. Configure networking inside VM:"
-        echo "   # Option 1: NetworkManager (recommended)"
-        echo "   nmcli device connect eth0"
-        echo
-        echo "   # Option 2: Manual configuration"
-        echo "   sudo ip addr add 192.168.${VLAN_ID}.10/24 dev eth0"
-        echo "   sudo ip route add default via 192.168.${VLAN_ID}.1"
-        echo "   echo \"nameserver 8.8.8.8\" | sudo tee /etc/resolv.conf"
-        echo
-        echo "3. Test connectivity:"
-        echo "   ping google.com"
-        echo
-    fi
-
-    if [[ "$has_usb" == true ]]; then
-        echo "4. USB WiFi adapter available as wlan0 for penetration testing"
-        echo "   # Check if detected"
-        echo "   iwconfig"
-        echo "   # Enable monitor mode"
-        echo "   sudo airmon-ng start wlan0"
-        echo
-    fi
-
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo -e "${BLUE}🌐 NETWORK TOPOLOGY${NC}"
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-
-    if [[ "$has_network" == true ]]; then
-        echo "Host System ── $HOST_INTERFACE ── Bridge $BRIDGE_NAME ── Internet"
-        echo "                                    │"
-        echo "                                VLAN $VLAN_ID ── VM eth0 (isolated)"
-    fi
-
-    if [[ "$has_usb" == true ]]; then
-        echo "USB WiFi Adapter ──────────────────── VM wlan0 (direct passthrough)"
-    fi
-
-    echo
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo -e "${GREEN}🔧 MANAGEMENT COMMANDS${NC}"
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo "Start VM:     virsh start $vm_name"
-    echo "Stop VM:      virsh shutdown $vm_name"
-    echo "VM Console:   virsh console $vm_name"
-    echo "VM VNC:       virt-viewer $vm_name"
-    echo "VM Status:    virsh list --all"
-    echo
-    echo "Bridge Info:  ip addr show $BRIDGE_NAME"
-    echo "VLAN Info:    ip addr show $BRIDGE_NAME.$VLAN_ID"
-    echo "USB Devices:  lsusb"
-    echo
-    echo "Backup saved: $BACKUP_DIR/"
-    echo "Logs saved:   $LOG_FILE"
-    echo
-    echo -e "${GREEN}Happy Pentesting! 🎯${NC}"
-    echo "Created by: 0xbv1 | 0xb0rn3 (github.com/0xb0rn3/Qemu-pentest)"
-}
-
-# List supported adapters
-list_adapters() {
-    echo "Supported USB WiFi Adapters:"
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    printf "%-15s %-25s %-8s %-10s %-12s\n" "Vendor:Product" "Name" "Monitor" "Injection" "Rating"
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-
-    for adapter in "${!ADAPTERS[@]}"; do
-        local info="${ADAPTERS[$adapter]}"
-        local name=$(echo "$info" | cut -d':' -f1)
-        local monitor=$(echo "$info" | cut -d':' -f2)
-        local inject=$(echo "$info" | cut -d':' -f3)
-        local rating=$(echo "$info" | cut -d':' -f4)
-
-        local rating_color=""
-        case "$rating" in
-            "recommended") rating_color="$GREEN" ;;
-            "good") rating_color="$YELLOW" ;;
-            *) rating_color="$NC" ;;
-        esac
-
-        printf "%-15s %-25s %-8s %-10s ${rating_color}%-12s${NC}\n" "$adapter" "$name" "$monitor" "$inject" "$rating"
-    done
-    echo
-}
-
-# List VMs
-list_vms() {
-    echo "Available VMs:"
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    virsh list --all --name | while read -r vm; do
-        [[ -n "$vm" ]] && echo "  $vm"
-    done
-    echo
-}
-
-# Restore VM from backup
-restore_vm() {
-    local backup_file="$1"
-
-    if [[ ! -f "$backup_file" ]]; then
-        print_error "Backup file not found: $backup_file"
-        exit 1
-    fi
-
-    # Extract VM name from backup filename
-    local vm_name=$(basename "$backup_file" | sed 's/_backup_.*\.xml$//')
-
-    print_info "Restoring VM $vm_name from backup..."
-
-    if [[ "$DRY_RUN" == true ]]; then
-        print_info "[DRY RUN] Would restore VM $vm_name from $backup_file"
-        return
-    fi
-
-    # FIX: Check if VM is running and destroy it before restoring.
-    if virsh list --state-running --name | grep -q "^$vm_name$"; then
-        print_warning "VM $vm_name is running. It will be forcefully stopped to restore the configuration."
-        virsh destroy "$vm_name" &> /dev/null || print_warning "Could not stop VM (may already be stopped)."
-        sleep 2
-    fi
-
-    # Validate backup XML
-    if ! xmllint --noout "$backup_file" 2>/dev/null; then
-        print_error "Invalid XML in backup file"
-        exit 1
-    fi
-
-    # Apply backup configuration
-    if virsh define "$backup_file"; then
-        print_success "VM $vm_name restored from backup"
-    else
-        print_error "Failed to restore VM from backup"
-        exit 1
-    fi
-}
-
-# Main interactive setup
-interactive_setup() {
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo -e "${GREEN}VM Lab Isolation Setup v$SCRIPT_VERSION${NC}"
-    echo "Author: 0xbv1 | 0xb0rn3 (github.com/0xb0rn3/Qemu-pentest)"
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo
-
-    # VM Selection
-    select_vm
-
-    if [[ "$CREATE_NEW_VM" == true ]]; then
-        setup_new_vm
-    fi
-
-    # Network setup
-    print_info "Configuring network topology and security..."
-    NETWORK_TOPOLOGY=$(select_network_topology)
-    SECURITY_LEVEL=$(select_security_level)
-    HOST_INTERFACE=$(select_network_interface_enhanced)
-
-    # USB adapter setup
-    print_info "Configuring USB WiFi passthrough..."
-    local has_usb=false
-    if select_usb_adapter; then
-        has_usb=true
-    fi
-
-    # Confirmation
-    echo
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo -e "${YELLOW}CONFIGURATION SUMMARY${NC}"
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-
-    if [[ "$CREATE_NEW_VM" == true ]]; then
-        echo "Action: Create new VM"
-        echo "VM Name: $VM_NAME"
-        echo "ISO: $ISO_PATH"
-        echo "Memory: ${VM_MEMORY}MB"
-        echo "Cores: $VM_CORES"
-        echo "Disk: ${VM_DISK_SIZE}GB"
-    else
-        echo "Action: Configure existing VM"
-        echo "VM Name: $VM_NAME"
-    fi
-
-    echo "Host Interface: $HOST_INTERFACE"
-    echo "Bridge: $BRIDGE_NAME"
-    echo "VLAN: $VLAN_ID"
-    echo "Network Topology: $NETWORK_TOPOLOGY"
-    echo "Security Level: $SECURITY_LEVEL"
-
-
-    if [[ "$has_usb" == true ]]; then
-        echo "USB WiFi: $USB_VENDOR:$USB_PRODUCT"
-    else
-        echo "USB WiFi: Skipped"
-    fi
-
-    echo
-    read -p "Proceed with configuration? (y/n): " -r
-    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-        print_info "Configuration cancelled"
-        exit 0
-    fi
-
-    # Execute configuration
-    print_info "Starting configuration..."
-
-    # Create bridge network
-    create_bridge_enhanced "$HOST_INTERFACE" "$BRIDGE_NAME" "$VLAN_ID" "$NETWORK_TOPOLOGY" "$SECURITY_LEVEL"
-
-    # Create VM if needed
-    if [[ "$CREATE_NEW_VM" == true ]]; then
-        create_new_vm "$VM_NAME" "$ISO_PATH" "$VM_MEMORY" "$VM_CORES" "$VM_DISK_SIZE" "$VM_OS_VARIANT"
-    fi
-
-    # Modify VM configuration
-    modify_vm_xml "$VM_NAME" true "$has_usb"
-
-    # Make persistent if requested
-    if [[ "$PERSISTENT" == true ]]; then
-        make_persistent "$HOST_INTERFACE" "$BRIDGE_NAME" "$VLAN_ID"
-    fi
-
-    # Show final instructions
-    show_post_setup_instructions "$VM_NAME" true "$has_usb"
-}
-
-# Parse command line arguments
-parse_arguments() {
-    while [[ $# -gt 0 ]]; do
-        case $1 in
-            --vm)
-                VM_NAME="$2"
-                shift 2
+            4)
+                # Download history - placeholder for future implementation
+                clear
+                log_header "Download History"
+                echo "Feature coming soon!"
+                echo
+                echo "Press Enter to continue..."
+                read -r
                 ;;
-            --create-vm)
-                CREATE_NEW_VM=true
-                shift
+            5)
+                help_menu
                 ;;
-            --iso)
-                ISO_PATH="$2"
-                shift 2
-                ;;
-            --download-iso)
-                # This will be handled in the main logic
-                shift
-                ;;
-            --adapter)
-                if [[ "$2" =~ ^[0-9a-f]{4}:[0-9a-f]{4}$ ]]; then
-                    USB_VENDOR="${2%:*}"
-                    USB_PRODUCT="${2#*:}"
-                else
-                    print_error "Invalid adapter format. Use: vendor:product (e.g., 0e8d:7612)"
-                    exit 1
-                fi
-                shift 2
-                ;;
-            --vlan)
-                VLAN_ID="$2"
-                shift 2
-                ;;
-            --interface)
-                HOST_INTERFACE="$2"
-                shift 2
-                ;;
-            --bridge)
-                BRIDGE_NAME="$2"
-                shift 2
-                ;;
-            --memory)
-                VM_MEMORY="$2"
-                shift 2
-                ;;
-            --cores)
-                VM_CORES="$2"
-                shift 2
-                ;;
-            --disk)
-                VM_DISK_SIZE="$2"
-                shift 2
-                ;;
-            --persistent)
-                PERSISTENT=true
-                shift
-                ;;
-            --dry-run)
-                DRY_RUN=true
-                shift
-                ;;
-            --restore)
-                restore_vm "$2"
-                exit 0
-                ;;
-            --list-adapters)
-                list_adapters
-                exit 0
-                ;;
-            --list-vms)
-                list_vms
-                exit 0
-                ;;
-            --verbose)
-                VERBOSE=true
-                shift
-                ;;
-            --help)
-                show_help
+            6)
+                echo
+                log_info "Thanks for using FastDL!"
                 exit 0
                 ;;
             *)
-                print_error "Unknown option: $1"
-                show_help
-                exit 1
+                echo
+                log_error "Invalid choice. Please enter 1-6."
+                sleep 1
                 ;;
         esac
     done
 }
 
-# Main function
+# Main execution
 main() {
-    # Initialize logging
-    echo "VM Lab Isolation Setup started at $(date)" > "$LOG_FILE"
-
-    # Parse arguments
-    parse_arguments "$@"
-
-    # Perform checks
-    check_root
-    check_dependencies
-    check_libvirt
-
-    # If parameters provided via CLI, use non-interactive mode
-    if [[ -n "$VM_NAME" || "$CREATE_NEW_VM" == true ]]; then
-        print_info "Running in non-interactive mode..."
-
-        # Validate required parameters for new VM
-        if [[ "$CREATE_NEW_VM" == true ]]; then
-            if [[ -z "$ISO_PATH" ]]; then
-                setup_new_vm # Enter interactive mode to get ISO
-            fi
-            [[ -z "$VM_NAME" ]] && { print_error "VM name required for new VM creation"; exit 1; }
-            [[ -z "$VM_MEMORY" ]] && VM_MEMORY="2048"
-            [[ -z "$VM_CORES" ]] && VM_CORES="2"
-            [[ -z "$VM_DISK_SIZE" ]] && VM_DISK_SIZE="40"
+    # Handle command line arguments first
+    handle_args "$@"
+    
+    # Check if FastDL is installed
+    if ! check_installation; then
+        log_header "FastDL First-Time Setup Required"
+        echo "FastDL needs to be set up before first use."
+        echo "This will:"
+        echo "  • Install Rust toolchain (if needed)"
+        echo "  • Install system dependencies"
+        echo "  • Build the high-performance core engine"
+        echo "  • Create configuration files"
+        echo
+        echo -n "Proceed with setup? [Y/n]: "
+        read -r setup_choice
+        
+        if [[ ! "$setup_choice" =~ ^[Nn] ]]; then
+            setup_fastdl
+        else
+            log_error "Setup cancelled. FastDL cannot run without setup."
+            exit 1
         fi
-
-        # Auto-detect missing parameters and set defaults for new options
-        [[ -z "$HOST_INTERFACE" ]] && HOST_INTERFACE=$(detect_network_interfaces_enhanced | cut -d'|' -f1 | head -1)
-        [[ -z "$NETWORK_TOPOLOGY" ]] && NETWORK_TOPOLOGY="isolated"
-        [[ -z "$SECURITY_LEVEL" ]] && SECURITY_LEVEL="medium"
-
-
-        # Check if we have USB adapter
-        local has_usb=false
-        if [[ -n "$USB_VENDOR" && -n "$USB_PRODUCT" ]]; then
-            has_usb=true
-        fi
-
-        # Execute configuration
-        create_bridge_enhanced "$HOST_INTERFACE" "$BRIDGE_NAME" "$VLAN_ID" "$NETWORK_TOPOLOGY" "$SECURITY_LEVEL"
-
-        if [[ "$CREATE_NEW_VM" == true ]]; then
-            create_new_vm "$VM_NAME" "$ISO_PATH" "$VM_MEMORY" "$VM_CORES" "$VM_DISK_SIZE" "$VM_OS_VARIANT"
-        fi
-
-        modify_vm_xml "$VM_NAME" true "$has_usb"
-
-        if [[ "$PERSISTENT" == true ]]; then
-            make_persistent "$HOST_INTERFACE" "$BRIDGE_NAME" "$VLAN_ID"
-        fi
-
-        show_post_setup_instructions "$VM_NAME" true "$has_usb"
-    else
-        # Run interactive setup
-        interactive_setup
     fi
-
-    # Add cleanup at the end of main() function
-    cleanup_fastdl
-
-    print_success "Setup completed successfully!"
-    log "Setup completed successfully"
+    
+    # Load configuration
+    load_config
+    
+    # Start interactive mode
+    interactive_mode
 }
 
-# Handle script interruption
-trap 'cleanup_fastdl; print_error "Script interrupted"; exit 1' INT TERM
-
-# Run main function
+# Execute main function with all arguments
 main "$@"
