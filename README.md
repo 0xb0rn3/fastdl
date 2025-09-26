@@ -87,10 +87,10 @@
 ### **One-Line Install**
 
 ```bash
-
+wget https://github.com/0xb0rn3/fastdl/blob/main/fastdl && chmod +x fastdl && sudo mv fastdl /usr/local/bin/
 ```
 
-<details> wget https://github.com/0xb0rn3/fastdl/blob/main/fastdl && chmod +x fastdl && sudo mv fastdl /usr/local/bin/
+<details> 
 <summary><b>🔐 Verify Installation (Recommended)</b></summary>
 
 ```bash
