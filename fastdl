@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# UltraFast Downloader - Pure Bash Implementation
+# FastDL - Pure Bash Implementation
 # Extremely fast concurrent downloader for massive files
 # Linux-native with zero external dependencies beyond standard tools
 
@@ -8,16 +8,18 @@ set -euo pipefail
 
 # Version and metadata
 readonly SCRIPT_VERSION="1.0.0"
-readonly SCRIPT_NAME="UltraFast Downloader"
-readonly SCRIPT_AUTHOR="0xb0rn3"
+readonly SCRIPT_NAME="FastDL"
+readonly SCRIPT_AUTHOR="0xb0rn3 | 0xbv1"
+readonly SCRIPT_CONTACT="Discord: oxbv1 | X: oxbv1 | Instagram: theehiv3 | Email: q4n0@proton.me"
+readonly SCRIPT_REPO="https://github.com/0xb0rn3/fastdl"
 
 # Global configuration
-readonly CONFIG_DIR="$HOME/.ultrafast"
+readonly CONFIG_DIR="$HOME/.fastdl"
 readonly CONFIG_FILE="$CONFIG_DIR/config"
-readonly DOWNLOADS_DIR="$HOME/Downloads/UltraFast"
+readonly DOWNLOADS_DIR="$HOME/Downloads/FastDL"
 readonly LOG_DIR="$CONFIG_DIR/logs"
-readonly TEMP_DIR="/tmp/ultrafast-$$"
-readonly LOCK_DIR="/tmp/ultrafast-locks"
+readonly TEMP_DIR="/tmp/fastdl-$"
+readonly LOCK_DIR="/tmp/fastdl-locks"
 
 # Performance settings (tunable)
 DEFAULT_CONNECTIONS=32
@@ -26,7 +28,7 @@ DEFAULT_TIMEOUT=30
 DEFAULT_RETRIES=5
 DEFAULT_MAX_CONCURRENT=8
 DEFAULT_BUFFER_SIZE="8M"
-DEFAULT_USER_AGENT="UltraFast/1.0 (Linux; High-Performance Downloader)"
+DEFAULT_USER_AGENT="FastDL/1.0 (Linux; High-Performance Downloader)"
 
 # Colors for output
 declare -A COLORS=(
@@ -183,13 +185,31 @@ check_dependencies() {
     log INFO "Using $PREFERRED_TOOL as primary download engine"
 }
 
+# Display banner
+show_banner() {
+    echo -e "${COLORS[BOLD]}${COLORS[CYAN]}"
+    cat << 'EOF'
+╔══════════════════════════════════════════════════════════════════════════════╗
+║                                 FastDL v1.0                                  ║
+║                     High-Performance Multi-Connection Downloader             ║
+║                                                                              ║
+║                            Developed by 0xb0rn3 | 0xbv1                     ║
+║                                                                              ║
+║  Discord: oxbv1  │  X: oxbv1  │  Instagram: theehiv3  │  Email: q4n0@proton.me║
+║                                                                              ║
+║                      Repository: github.com/0xb0rn3/fastdl                  ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+EOF
+    echo -e "${COLORS[NC]}"
+}
+
 # Initialize configuration
 init_config() {
     mkdir -p "$CONFIG_DIR" "$DOWNLOADS_DIR" "$LOG_DIR" "$TEMP_DIR" "$LOCK_DIR"
     
     if [[ ! -f "$CONFIG_FILE" ]]; then
         cat > "$CONFIG_FILE" << EOF
-# UltraFast Downloader Configuration
+# FastDL Configuration
 CONNECTIONS=$DEFAULT_CONNECTIONS
 CHUNK_SIZE=$DEFAULT_CHUNK_SIZE
 TIMEOUT=$DEFAULT_TIMEOUT
@@ -197,7 +217,7 @@ RETRIES=$DEFAULT_RETRIES
 MAX_CONCURRENT=$DEFAULT_MAX_CONCURRENT
 BUFFER_SIZE=$DEFAULT_BUFFER_SIZE
 USER_AGENT="$DEFAULT_USER_AGENT"
-DOWNLOADS_DIR="$DOWNLOADS_DIR"
+DOWNLOADS_DIR="$DEFAULT_DOWNLOADS_DIR"
 AUTO_RESUME=true
 VERIFY_SSL=true
 FOLLOW_REDIRECTS=true
@@ -615,8 +635,8 @@ show_dashboard() {
         
         echo -e "${COLORS[BOLD]}${COLORS[CYAN]}"
         echo "╔══════════════════════════════════════════════════════════════════════════════╗"
-        echo "║                              UltraFast Downloader                           ║"
-        echo "║                                  Dashboard                                   ║"
+        echo "║                                 FastDL v1.0                                  ║"
+        echo "║                              Real-time Dashboard                            ║"
         echo "╚══════════════════════════════════════════════════════════════════════════════╝"
         echo -e "${COLORS[NC]}"
         
@@ -682,16 +702,7 @@ show_dashboard() {
 # Interactive menu system
 show_main_menu() {
     clear
-    echo -e "${COLORS[BOLD]}${COLORS[CYAN]}"
-    cat << 'EOF'
-╔══════════════════════════════════════════════════════════════════════════════╗
-║                              UltraFast Downloader                           ║
-║                          Extreme Performance Edition                        ║
-║                                                                              ║
-║                          Engineered by 0xb0rn3                              ║
-╚══════════════════════════════════════════════════════════════════════════════╝
-EOF
-    echo -e "${COLORS[NC]}"
+    show_banner
     
     echo -e "\n${COLORS[BOLD]}Main Menu:${COLORS[NC]}"
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
@@ -1048,7 +1059,7 @@ EOF
             RETRIES=$DEFAULT_RETRIES
             MAX_CONCURRENT=$DEFAULT_MAX_CONCURRENT
             BUFFER_SIZE=$DEFAULT_BUFFER_SIZE
-            DOWNLOADS_DIR="$HOME/Downloads/UltraFast"
+            DOWNLOADS_DIR="$HOME/Downloads/FastDL"
             AUTO_RESUME=true
             VERIFY_SSL=true
             log SUCCESS "Configuration reset to defaults!"
@@ -1145,9 +1156,11 @@ help_interface() {
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo
     
-    echo -e "${COLORS[BOLD]}UltraFast Downloader v$SCRIPT_VERSION${COLORS[NC]}"
+    echo -e "${COLORS[BOLD]}FastDL v$SCRIPT_VERSION${COLORS[NC]}"
     echo "Extreme performance file downloader for Linux"
     echo "Author: $SCRIPT_AUTHOR"
+    echo "Contact: $SCRIPT_CONTACT"
+    echo "Repository: $SCRIPT_REPO"
     echo
     echo -e "${COLORS[BOLD]}Features:${COLORS[NC]}"
     echo "• Multi-connection downloads for maximum speed"
@@ -1255,7 +1268,7 @@ main_loop() {
             9) help_interface ;;
             0) 
                 echo
-                log INFO "Thanks for using UltraFast Downloader!"
+                log INFO "Thanks for using FastDL!"
                 exit 0
                 ;;
             *)
