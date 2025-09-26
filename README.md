@@ -87,7 +87,7 @@
 ### **One-Line Install**
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/0xb0rn3/fastdl/main/install.sh | sudo bash
+curl -sSL https://raw.githubusercontent.com/0xb0rn3/fastdl/main/fastdl | sudo bash
 ```
 
 <details>
