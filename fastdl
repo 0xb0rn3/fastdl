@@ -30,6 +30,8 @@ DEFAULT_MAX_CONCURRENT=8
 DEFAULT_BUFFER_SIZE="8M"
 DEFAULT_USER_AGENT="FastDL/1.0 (Linux; High-Performance Downloader)"
 
+DEFAULT_DOWNLOADS_DIR="$HOME/Downloads/FastDL"
+
 # Colors for output
 declare -A COLORS=(
     [RED]='\033[0;31m'
