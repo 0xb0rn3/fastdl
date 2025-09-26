@@ -1,423 +1,427 @@
-# 🚀 FastDL - High-Performance Cross-Platform Downloader
+# FastDL - High-Performance Multi-Connection Downloader
 
 <div align="center">
-
-![FastDL Logo](https://via.placeholder.com/200x80/6366f1/ffffff?text=FastDL)
-
-[![Version](https://img.shields.io/badge/version-0.0.1-brightgreen.svg)](https://github.com/0xb0rn3/fastdl)
-[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Rust](https://img.shields.io/badge/rust-1.70+-orange.svg)](https://www.rust-lang.org/)
-[![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20macOS%20%7C%20Windows-lightgrey.svg)](https://github.com/0xb0rn3/fastdl)
-[![Build Status](https://img.shields.io/badge/build-passing-brightgreen.svg)](https://github.com/0xb0rn3/fastdl)
-
-**The ultimate high-performance file downloader engineered for speed, reliability, and cross-platform compatibility.**
-
-[📥 Installation](#installation) • [🎯 Features](#features) • [🚀 Quick Start](#quick-start) • [📖 Documentation](#usage) • [🤝 Contributing](#contributing)
-
-</div>
-
----
-
-## ✨ Features
-
-<div align="center">
-
-| 🏎️ **Multi-Connection Downloads** | 🔄 **Concurrent Processing** | 📊 **Smart Progress Tracking** |
-|:---:|:---:|:---:|
-| Utilize multiple connections per file for maximum download speed | Download multiple files simultaneously with configurable limits | Real-time progress with speed indicators and ETA |
-
-| 🔧 **Auto-Resume** | 🎯 **Cross-Platform** | 📝 **Batch Downloads** |
-|:---:|:---:|:---:|
-| Automatically resume interrupted downloads | Native support for Linux, macOS, and Windows | Process multiple URLs from file lists |
-
-</div>
-
-### 🎨 Key Highlights
-
-- **⚡ Blazing Fast**: Built with Rust for maximum performance and minimal resource usage
-- **🛡️ Robust**: Advanced error handling with automatic retries and recovery
-- **🎮 User-Friendly**: Beautiful interactive CLI with intuitive menu system
-- **⚙️ Configurable**: Extensive customization options for power users
-- **📱 Modern**: Contemporary design with colored output and progress indicators
-- **🔒 Secure**: Safe downloads with comprehensive validation and error checking
-
----
-
-## 📥 Installation
 
 ```
-1. **Clone the repository**
-   ```bash
-   git clone https://github.com/0xb0rn3/fastdl.git
-   cd fastdl
-   ```
+╔══════════════════════════════════════════════════════════════════════════════╗
+║                                 FastDL v1.0                                  ║
+║                     High-Performance Multi-Connection Downloader             ║
+║                                                                              ║
+║                            Developed by 0xb0rn3 | 0xbv1                     ║
+║                                                                              ║
+║  Discord: oxbv1  │  X: oxbv1  │  Instagram: theehiv3  │  Email: q4n0@proton.me║
+╚══════════════════════════════════════════════════════════════════════════════╝
+```
 
-2. **Make executable and run setup**
-   ```bash
-   chmod +x fastdl
-   ./fastdl --setup
-   ```
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Bash](https://img.shields.io/badge/bash-4.0+-orange.svg)](https://www.gnu.org/software/bash/)
+[![Platform](https://img.shields.io/badge/platform-Linux-lightgrey.svg)](https://github.com/0xb0rn3/fastdl)
+[![Version](https://img.shields.io/badge/version-1.0.0-brightgreen.svg)](https://github.com/0xb0rn3/fastdl)
 
-3. **Add to PATH (optional)**
-   ```bash
-   sudo cp fastdl /usr/local/bin/
-   # or
-   echo 'export PATH="$PATH:$(pwd)"' >> ~/.bashrc
-   source ~/.bashrc
-   ```
+**Extremely fast, pure bash downloader designed for massive ISO images, torrents, and concurrent file downloads with zero external dependencies.**
 
-### 📦 System Requirements
-
-- **Operating System**: Linux, macOS, or Windows (WSL)
-- **Architecture**: x86_64, aarch64, or armv7
-- **Dependencies**: curl, build tools (automatically installed during setup)
-- **Rust**: Automatically installed if not present
+</div>
 
 ---
 
-## 🚀 Quick Start
+## Features
 
-### 🎯 Interactive Mode
-Launch the beautiful interactive interface:
+**Extreme Performance:**
+- Multi-connection downloads (up to 64 concurrent connections)
+- Automatic system optimization based on hardware
+- Intelligent tool selection (aria2c, axel, curl, wget)
+- Concurrent batch downloading with job management
+- Advanced buffer management and memory optimization
+
+**Advanced Capabilities:**
+- Real-time storage device detection and analysis
+- Torrent support via aria2c integration
+- Automatic resume of interrupted downloads
+- Performance testing and optimization
+- Real-time monitoring dashboard
+- Cross-architecture Linux compatibility
+
+**Zero Dependencies:**
+- Pure bash implementation
+- Works with standard Linux utilities
+- Auto-detects available download tools
+- Compatible with all major Linux distributions
+
+---
+
+## Quick Start
+
+### Installation
+
+**Method 1: Direct Download & Execute**
 ```bash
+# Download and make executable
+wget https://raw.githubusercontent.com/0xb0rn3/fastdl/main/fastdl
+chmod +x fastdl
+./fastdl
+```
+
+**Method 2: Clone Repository**
+```bash
+git clone https://github.com/0xb0rn3/fastdl.git
+cd fastdl
+chmod +x fastdl
+./fastdl
+```
+
+**Method 3: System-wide Installation**
+```bash
+# Download script
+wget https://raw.githubusercontent.com/0xb0rn3/fastdl/main/fastdl
+
+# Make executable
+chmod +x fastdl
+
+# Install system-wide (requires sudo)
+sudo cp fastdl /usr/bin/fastdl
+
+# Now you can run from anywhere
 fastdl
 ```
 
-### ⚡ Command Line Usage
+### First Run
 
-**Download a single file:**
 ```bash
-fastdl https://example.com/large-file.zip
-```
+# Interactive mode (recommended for first-time users)
+./fastdl
 
-**Batch download from URL list:**
-```bash
-fastdl --file urls.txt
-```
+# Quick download
+./fastdl --download https://releases.ubuntu.com/22.04/ubuntu-22.04.3-desktop-amd64.iso
 
-**Advanced single download:**
-```bash
-fastdl https://example.com/file.zip \
-  --output ./downloads \
-  --connections 16 \
-  --verbose
+# Batch download
+./fastdl --batch urls.txt
 ```
 
 ---
 
-## 📖 Usage
+## Usage
 
-### 🎮 Interactive Mode
+### Interactive Mode
 
-FastDL features a beautiful, intuitive interactive interface:
-
-```
-  ╔═══════════════════════════════════════╗
-  ║        FastDL v0.0.1                  ║
-  ║    High-Performance File Downloader   ║
-  ║  Engineered by 0xb0rn3 | Ig: theehiv3 ║
-  ╚═══════════════════════════════════════╝
-
-Select an option:
-
-  1) Download Single File
-  2) Download Multiple Files (from list)
-  3) Configuration
-  4) Download History
-  5) Help & About
-  6) Exit
+Launch the beautiful interactive interface:
+```bash
+./fastdl
 ```
 
-### 📝 URL List Format
+The interactive menu provides:
+1. **Single File Download** - Download individual files with custom settings
+2. **Batch Download** - Process multiple URLs from a file
+3. **Torrent Download** - Full torrent support with aria2c
+4. **System Analysis** - Analyze your system for optimal settings
+5. **Storage Detection** - Real-time storage device detection
+6. **Real-time Dashboard** - Monitor active downloads and system stats
+7. **Configuration** - Customize download parameters
+8. **Performance Test** - Benchmark optimal connection settings
+9. **Help & About** - Documentation and contact information
+
+### Command Line Usage
+
+```bash
+# Quick single download
+./fastdl --download <url>
+
+# Batch download from file
+./fastdl --batch <file>
+
+# Analyze URL capabilities
+./fastdl --analyze <url>
+
+# Show real-time dashboard
+./fastdl --dashboard
+
+# Configure settings
+./fastdl --config
+
+# Display storage information
+./fastdl --storage
+
+# Show help
+./fastdl --help
+
+# Show version
+./fastdl --version
+```
+
+### Batch Download File Format
 
 Create a text file with URLs (one per line):
 
 ```txt
-# High-priority downloads
-https://example.com/important-file.zip
-https://mirror.example.com/backup.tar.gz
+# High-priority ISO downloads
+https://releases.ubuntu.com/22.04/ubuntu-22.04.3-desktop-amd64.iso
+https://cdimage.debian.org/debian-cd/current/amd64/iso-cd/debian-12.2.0-amd64-netinst.iso
 
 # Software downloads
-https://releases.example.com/app-v1.2.3.dmg
-https://cdn.example.com/installer.exe
+https://download.fedoraproject.org/pub/fedora/linux/releases/38/Workstation/x86_64/iso/Fedora-Workstation-Live-x86_64-38-1.6.iso
 
-# Ignore this line - comments start with #
-https://example.com/another-file.pdf
+# Comments start with # and are ignored
+https://archlinux.org/iso/2023.10.14/archlinux-2023.10.14-x86_64.iso
 ```
 
-### ⚙️ Configuration Options
+---
 
-FastDL offers extensive customization through its configuration system:
+## Configuration
 
-| Setting | Default | Description |
-|---------|---------|-------------|
-| `default_connections` | 8 | Number of parallel connections per file |
-| `default_chunk_size_mb` | 1 | Size of each download chunk in MB |
-| `default_timeout_seconds` | 30 | Connection timeout in seconds |
-| `default_retries` | 3 | Number of retry attempts on failure |
-| `default_max_concurrent` | 3 | Maximum concurrent file downloads |
-| `downloads_directory` | `~/Downloads/FastDL` | Default download location |
+FastDL automatically optimizes based on your system but allows full customization:
 
-### 🎯 Command Line Arguments
+### Automatic Optimization
+
+**High-end Systems (16+ cores):**
+- 64 connections per download
+- 16 concurrent downloads
+- 16MB buffer size
+
+**Mid-range Systems (8-16 cores):**
+- 32 connections per download
+- 8 concurrent downloads
+- 8MB buffer size
+
+**Entry-level Systems (4-8 cores):**
+- 16 connections per download
+- 4 concurrent downloads
+- 4MB buffer size
+
+### Manual Configuration
+
+Access via interactive menu (option 7) or edit `~/.fastdl/config`:
 
 ```bash
-# Basic usage
-fastdl <url>                    # Download single file
-fastdl --file <path>            # Batch download from file
-fastdl --setup                  # Run setup/reinstall
-fastdl --help                   # Show help information
-
-# Advanced options (coming soon)
-fastdl <url> --output <dir>     # Specify output directory
-fastdl <url> --connections <n>  # Set connection count
-fastdl <url> --verbose          # Enable verbose output
-fastdl <url> --resume           # Force resume attempt
+# FastDL Configuration
+CONNECTIONS=32                    # Connections per download
+CHUNK_SIZE=1M                    # Chunk size for splitting
+TIMEOUT=30                       # Connection timeout (seconds)
+RETRIES=5                        # Retry attempts
+MAX_CONCURRENT=8                 # Max concurrent downloads
+BUFFER_SIZE=8M                   # Buffer size
+AUTO_RESUME=true                 # Resume interrupted downloads
+VERIFY_SSL=true                  # Verify SSL certificates
 ```
 
 ---
 
-## 🏗️ Architecture
+## System Requirements
 
-FastDL uses a hybrid architecture combining the best of both worlds:
+### Minimum Requirements
+- **OS:** Any Linux distribution
+- **Shell:** Bash 4.0+
+- **Tools:** At least one of: curl, wget, aria2c, axel
+- **Memory:** 1GB RAM
+- **Storage:** 10MB for FastDL + space for downloads
 
-```
-┌─────────────────┐    ┌──────────────────┐    ┌─────────────────┐
-│   Bash Wrapper  │───▶│   Rust Core      │───▶│   File System   │
-│   • UI/UX       │    │   • Performance  │    │   • Downloads   │
-│   • Config      │    │   • Networking   │    │   • Resume      │
-│   • Menus       │    │   • Concurrency  │    │   • Validation  │
-└─────────────────┘    └──────────────────┘    └─────────────────┘
-```
+### Recommended Requirements
+- **OS:** Modern Linux distribution
+- **CPU:** 4+ cores
+- **Memory:** 4GB+ RAM
+- **Tools:** aria2c + axel + curl + wget
+- **Network:** High-speed internet connection
 
-- **Bash Layer**: Provides beautiful UI, configuration management, and system integration
-- **Rust Core**: Handles high-performance downloading, networking, and file operations
-- **JSON Communication**: Clean interface between layers for maximum flexibility
+### Supported Distributions
+
+FastDL is tested and compatible with:
+- **Debian/Ubuntu** (apt)
+- **RHEL/CentOS/Fedora** (yum/dnf)
+- **Arch Linux** (pacman)
+- **SUSE/openSUSE** (zypper)
+- **Alpine Linux** (apk)
+- **And virtually any Linux distribution**
 
 ---
 
-## 🔧 Advanced Features
+## Performance Examples
 
-### 🎛️ Performance Tuning
-
-**For Large Files (>1GB):**
+### Single Large File (10GB ISO)
 ```bash
-# Increase connections and chunk size
-fastdl https://example.com/large-file.iso \
-  --connections 32 \
-  --chunk-size 10
+# Standard download
+wget https://example.com/large.iso  # ~45 minutes
+
+# FastDL with 32 connections
+./fastdl --download https://example.com/large.iso  # ~8 minutes
 ```
 
-**For Many Small Files:**
+### Batch Download (50 files)
 ```bash
-# Increase concurrent downloads
-fastdl --file urls.txt \
-  --concurrent 8 \
-  --connections 4
+# Sequential downloads
+for url in $(cat urls.txt); do wget "$url"; done  # ~3 hours
+
+# FastDL concurrent batch (8 concurrent)
+./fastdl --batch urls.txt  # ~25 minutes
 ```
 
-### 📊 Progress Monitoring
-
-FastDL provides real-time progress information:
-- **Speed**: Current download speed in MB/s
-- **ETA**: Estimated time to completion
-- **Progress**: Visual progress bar with percentage
-- **Status**: Current operation status
-
-### 🔄 Resume Capability
-
-Interrupted downloads are automatically detected and resumed:
-- **Smart Detection**: Identifies partial downloads
-- **Integrity Checking**: Validates existing data
-- **Seamless Resume**: Continues from exact breakpoint
-
----
-
-## 🎨 Screenshots
-
-<div align="center">
-
-### 🏠 Main Menu
-![Main Menu](https://via.placeholder.com/600x400/1a1a1a/00ff00?text=Interactive+Main+Menu)
-
-### 📥 Download Progress  
-![Download Progress](https://via.placeholder.com/600x200/1a1a1a/00aaff?text=Real-time+Progress+Display)
-
-### ⚙️ Configuration
-![Configuration](https://via.placeholder.com/600x350/1a1a1a/ff8800?text=Advanced+Configuration+Options)
-
-</div>
-
----
-
-## 🤝 Contributing
-
-We welcome contributions from the community! Here's how you can help:
-
-### 🐛 Reporting Issues
-
-Found a bug? Please create an issue with:
-- **System Information**: OS, architecture, version
-- **Steps to Reproduce**: Detailed reproduction steps  
-- **Expected vs Actual**: What should happen vs what happens
-- **Logs**: Include relevant error messages or logs
-
-### 💡 Feature Requests
-
-Have an idea? We'd love to hear it! Please include:
-- **Use Case**: Why is this feature needed?
-- **Implementation**: How should it work?
-- **Examples**: Provide concrete examples
-
-### 🔧 Development Setup
-
+### Torrent Download
 ```bash
-# Fork and clone the repository
-git clone https://github.com/yourusername/fastdl.git
-cd fastdl
-
-# Run setup to install dependencies
-./fastdl --setup
-
-# Make your changes and test
-./fastdl --test-suite
-
-# Submit a pull request
+# FastDL with optimized settings
+./fastdl  # Select option 3 for torrent download
+# Automatic DHT, PEX, and peer optimization
 ```
 
-### 📋 Development Guidelines
+---
 
-- **Code Style**: Follow existing conventions
-- **Testing**: Add tests for new features
-- **Documentation**: Update README and inline docs
-- **Commits**: Use conventional commit messages
+## Advanced Features
+
+### Real-time Monitoring
+
+Access the dashboard for live statistics:
+```bash
+./fastdl --dashboard
+```
+
+Features:
+- **System Stats:** CPU load, memory usage, disk usage
+- **Active Downloads:** Live progress of all downloads
+- **Network Usage:** Real-time bandwidth monitoring
+- **Recent Completions:** History of completed downloads
+
+### Storage Intelligence
+
+Automatic detection of:
+- **Physical Devices:** HDDs, SSDs, NVMe drives
+- **Mount Points:** All accessible storage locations
+- **Network Mounts:** NFS, CIFS, SSHFS detection
+- **Available Space:** Real-time capacity monitoring
+- **I/O Schedulers:** Disk optimization recommendations
+
+### Performance Testing
+
+Built-in benchmarking to find optimal settings:
+```bash
+./fastdl  # Select option 8 for performance test
+```
+
+Tests different connection counts and recommends optimal settings for your system and network.
 
 ---
 
-## 📚 FAQ
+## Troubleshooting
 
-<details>
-<summary><strong>🤔 Why is FastDL faster than other downloaders?</strong></summary>
+### Common Issues
 
-FastDL uses several optimization techniques:
-- **Multi-connection downloads** split files into chunks for parallel processing
-- **Rust core engine** provides zero-cost abstractions and maximum performance
-- **Smart chunk sizing** adapts to network conditions and file sizes
-- **Concurrent processing** downloads multiple files simultaneously
-- **Optimized networking** uses modern HTTP/2 and connection pooling
-</details>
+**Downloads fail with SSL errors:**
+```bash
+# Disable SSL verification (not recommended for security)
+# In configuration, set: VERIFY_SSL=false
+```
 
-<details>
-<summary><strong>🔧 Can I customize the number of connections?</strong></summary>
+**Low download speeds:**
+```bash
+# Run performance test
+./fastdl  # Option 8
+# Or manually increase connections
+# In configuration, set: CONNECTIONS=64
+```
 
-Yes! You can customize connections in several ways:
-- **Interactive mode**: Use the configuration menu
-- **Command line**: `fastdl <url> --connections 16`
-- **Config file**: Edit `~/.fastdl/config.json`
-- **Per download**: Different settings for each download
-</details>
+**Permission denied errors:**
+```bash
+# Ensure download directory is writable
+chmod 755 ~/Downloads/FastDL
+# Or change download directory in config
+```
 
-<details>
-<summary><strong>📱 Does FastDL work on mobile devices?</strong></summary>
+**Missing download tools:**
+```bash
+# Debian/Ubuntu
+sudo apt install aria2 axel curl wget
 
-FastDL is designed for desktop/server environments. For mobile devices:
-- **Android**: Use Termux with the Linux installation method
-- **iOS**: Not currently supported (requires jailbreak)
-- **Mobile alternatives**: Consider specialized mobile download managers
-</details>
+# RHEL/CentOS/Fedora
+sudo yum install aria2 axel curl wget
 
-<details>
-<summary><strong>🔒 Is FastDL secure?</strong></summary>
+# Arch Linux
+sudo pacman -S aria2 axel curl wget
 
-FastDL prioritizes security:
-- **HTTPS support**: Encrypted connections for secure downloads
-- **Checksum validation**: Verify file integrity (coming soon)
-- **No data collection**: FastDL doesn't send usage data anywhere
-- **Open source**: Full transparency - audit the code yourself
-</details>
+# Alpine Linux
+sudo apk add aria2 axel curl wget
+```
 
-<details>
-<summary><strong>💾 How much disk space does FastDL need?</strong></summary>
+### Debug Mode
 
-FastDL has minimal requirements:
-- **Binary size**: ~5-10MB (including Rust core)
-- **Configuration**: <1KB for settings
-- **Temporary files**: Equal to largest concurrent download
-- **Dependencies**: Rust toolchain (~500MB, one-time)
-</details>
+Enable debug output for troubleshooting:
+```bash
+DEBUG=1 ./fastdl --download <url>
+```
 
----
+### Log Files
 
-## 📈 Roadmap
-
-### 🎯 Version 0.1.0 (Coming Soon)
-- [ ] **Checksum Verification**: SHA256/MD5 validation
-- [ ] **Download Scheduling**: Scheduled and queued downloads  
-- [ ] **Bandwidth Limiting**: Rate limiting and QoS controls
-- [ ] **Plugin System**: Extensible architecture for custom features
-
-### 🚀 Version 0.2.0 (Future)
-- [ ] **GUI Interface**: Cross-platform graphical interface
-- [ ] **Cloud Integration**: Direct downloads from cloud services
-- [ ] **Torrent Support**: BitTorrent protocol integration
-- [ ] **Mobile Apps**: Native Android/iOS applications
-
-### 🌟 Version 1.0.0 (Long-term)
-- [ ] **Enterprise Features**: API, webhooks, monitoring
-- [ ] **Advanced Protocols**: FTP, SFTP, WebDAV support
-- [ ] **AI Optimization**: Machine learning for optimal settings
-- [ ] **Distributed Downloads**: P2P and CDN optimization
+FastDL maintains detailed logs:
+- **Main log:** `~/.fastdl/logs/fastdl.log`
+- **Configuration:** `~/.fastdl/config`
+- **Temporary files:** `/tmp/fastdl-*`
 
 ---
 
-## 📊 Performance Benchmarks
+## Security Considerations
 
-<div align="center">
+### SSL/TLS Verification
+FastDL verifies SSL certificates by default. Only disable for trusted internal networks.
 
-| File Size | Standard Download | FastDL (8 connections) | Improvement |
-|-----------|-------------------|-------------------------|-------------|
-| 100MB     | 45s              | 12s                    | **3.75x** ⚡ |
-| 1GB       | 7m 30s           | 1m 45s                 | **4.3x** 🚀 |
-| 5GB       | 38m 15s          | 8m 20s                 | **4.6x** 💨 |
+### File Integrity
+For critical downloads, verify checksums manually:
+```bash
+# After download
+sha256sum downloaded_file.iso
+# Compare with provided checksum
+```
 
-*Benchmarks performed on 100Mbps connection with optimal server conditions*
-
-</div>
-
----
-
-## 🙏 Acknowledgments
-
-Special thanks to:
-- **Rust Community**: For the amazing ecosystem and tools
-- **Contributors**: Everyone who helps improve FastDL
-- **Beta Testers**: Early adopters who provide valuable feedback
-- **Open Source**: Projects that inspire and enable FastDL
+### Network Security
+FastDL respects system proxy settings and network configurations.
 
 ---
 
-## 📞 Support & Contact
+## Contributing
 
-<div align="center">
+We welcome contributions! Here's how to get involved:
 
-### 🏗️ **Developer**
-**0xb0rn3** | **0xbv1**
+### Reporting Issues
+1. Check existing issues on GitHub
+2. Include system information (OS, bash version)
+3. Provide detailed steps to reproduce
+4. Include relevant log files
 
-### 📱 **Social Media**
-[![Instagram](https://img.shields.io/badge/Instagram-@theehiv3-E4405F?style=for-the-badge&logo=instagram&logoColor=white)](https://instagram.com/theehiv3)
+### Feature Requests
+1. Search existing feature requests
+2. Describe the use case clearly
+3. Explain expected behavior
+4. Consider implementation complexity
 
-### 🐛 **Issues & Support**
-[![GitHub Issues](https://img.shields.io/badge/GitHub-Issues-181717?style=for-the-badge&logo=github&logoColor=white)](https://github.com/0xb0rn3/fastdl/issues)
+### Code Contributions
+1. Fork the repository
+2. Create a feature branch
+3. Test thoroughly on multiple distributions
+4. Submit a pull request with clear description
 
-### 💬 **Discussions**
-[![GitHub Discussions](https://img.shields.io/badge/GitHub-Discussions-181717?style=for-the-badge&logo=github&logoColor=white)](https://github.com/0xb0rn3/fastdl/discussions)
-
-</div>
+### Testing
+Help us test on different distributions:
+- Test installation methods
+- Verify compatibility
+- Report performance results
+- Document edge cases
 
 ---
 
-## 📄 License
+## Support & Contact
 
-FastDL is open source software licensed under the **MIT License**.
+### Developer Information
+- **Author:** 0xb0rn3 | 0xbv1
+- **Discord:** oxbv1
+- **X (Twitter):** oxbv1
+- **Instagram:** theehiv3
+- **Email:** q4n0@proton.me
+
+### Community Support
+- **GitHub Issues:** [Report bugs and request features](https://github.com/0xb0rn3/fastdl/issues)
+- **GitHub Discussions:** [Community support and questions](https://github.com/0xb0rn3/fastdl/discussions)
+
+### Professional Support
+For enterprise or professional support, contact: q4n0@proton.me
+
+---
+
+## License
+
+FastDL is released under the MIT License. See [LICENSE](LICENSE) file for details.
 
 ```
 MIT License
@@ -445,13 +449,28 @@ SOFTWARE.
 
 ---
 
+## Changelog
+
+### v1.0.0 (2024)
+- Initial release
+- Pure bash implementation
+- Multi-connection download support
+- Torrent support via aria2c
+- Real-time monitoring dashboard
+- Automatic system optimization
+- Cross-distribution compatibility
+- Interactive and CLI interfaces
+
+---
+
 <div align="center">
 
-**Made with ❤️ by [0xb0rn3](https://github.com/0xb0rn3)**
+**Made with ⚡ by [0xb0rn3](https://github.com/0xb0rn3)**
 
-[![Star this repo](https://img.shields.io/github/stars/0xb0rn3/fastdl?style=social)](https://github.com/0xb0rn3/fastdl)
-[![Follow @theehiv3](https://img.shields.io/badge/Follow-@theehiv3-E4405F?style=social&logo=instagram)](https://instagram.com/theehiv3)
+[![GitHub](https://img.shields.io/badge/GitHub-0xb0rn3-181717?style=for-the-badge&logo=github)](https://github.com/0xb0rn3/fastdl)
+[![Discord](https://img.shields.io/badge/Discord-oxbv1-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.com)
+[![Instagram](https://img.shields.io/badge/Instagram-theehiv3-E4405F?style=for-the-badge&logo=instagram&logoColor=white)](https://instagram.com/theehiv3)
 
-*If FastDL has been helpful to you, please consider giving it a ⭐ on GitHub!*
+*If FastDL has been helpful, please consider giving it a ⭐ on GitHub!*
 
 </div>
