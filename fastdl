@@ -205,7 +205,15 @@ EOF
 
 # Initialize configuration
 init_config() {
-    mkdir -p "$CONFIG_DIR" "$DOWNLOADS_DIR" "$LOG_DIR" "$TEMP_DIR" "$LOCK_DIR"
+    mkdir -p "$CONFIG_DIR" "$LOG_DIR" "$TEMP_DIR" "$LOCK_DIR"
+    
+    # Set default downloads directory if not already set
+    if [[ -z "${DOWNLOADS_DIR:-}" ]]; then
+        DOWNLOADS_DIR="$DEFAULT_DOWNLOADS_DIR"
+    fi
+    
+    # Create downloads directory
+    mkdir -p "$DOWNLOADS_DIR"
     
     if [[ ! -f "$CONFIG_FILE" ]]; then
         cat > "$CONFIG_FILE" << EOF
@@ -226,8 +234,20 @@ EOF
         log SUCCESS "Configuration created at $CONFIG_FILE"
     fi
     
-    # Load configuration
-    source "$CONFIG_FILE"
+    # Load configuration safely
+    if [[ -f "$CONFIG_FILE" ]]; then
+        # Source the config file, but handle any undefined variables gracefully
+        set +u  # Temporarily allow undefined variables
+        source "$CONFIG_FILE" 2>/dev/null || {
+            log WARNING "Error loading config file, using defaults"
+            DOWNLOADS_DIR="$DEFAULT_DOWNLOADS_DIR"
+        }
+        set -u  # Re-enable undefined variable checking
+    fi
+    
+    # Ensure DOWNLOADS_DIR is set
+    DOWNLOADS_DIR="${DOWNLOADS_DIR:-$DEFAULT_DOWNLOADS_DIR}"
+    mkdir -p "$DOWNLOADS_DIR"
 }
 
 # Detect available storage devices and directories
