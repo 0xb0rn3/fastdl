@@ -24,7 +24,7 @@
 
 <!-- Enhanced Animated Typing -->
 <p align="center">
-  <img src="https://readme-typing-svg.herokuapp.com?font=JetBrains+Mono&weight=600&size=24&pause=1000&color=6C63FF&center=true&vCenter=true&random=false&width=800&lines=Saturate+Your+Gigabit+Connection;32%2B+Parallel+Connections;SHA-256+File+Verification;Rust+Core+%2B+Bash+UI;Download+at+Light+Speed;Zero+Dependencies" alt="Typing SVG"/>
+  <img src="https://readme-typing-svg.herokuapp.com?font=JetBrains+Mono&weight=600&size=24&pause=1000&color=6C63FF&center=true&vCenter=true&random=false&width=800&lines=Saturate+Your+Gigabit+Connection;32%2B+Parallel+Connections;SHA-256+File+Verification;GOLANG+Core+%2B+Bash+UI;Download+at+Light+Speed;Zero+Dependencies" alt="Typing SVG"/>
 </p>
 
 <!-- Enhanced Tech Stack Icons -->
@@ -38,7 +38,7 @@
 
 <div align="center">
   
-### ⚡ **Blazing Fast** • 🔐 **SHA-256 Verified** • 🚀 **Production Ready** • 🦀 **Rust Powered**
+### ⚡ **Blazing Fast** • 🔐 **SHA-256 Verified** • 🚀 **Production Ready** • **GOLANG Powered**
 
 </div>
 
@@ -56,11 +56,6 @@
 - Batch verification from checksum files
 - Integrity validation before completion
 
-### 🦀 **Rust Core Engine**
-- Lightning-fast parallel downloads
-- Memory-efficient streaming
-- HTTP range request optimization
-- Zero-cost abstractions
 
 </td>
 <td width="50%" valign="top">
