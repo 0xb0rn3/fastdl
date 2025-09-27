@@ -1,7 +1,7 @@
 <div align="center">
 
 <!-- Dynamic Header -->
-<img src="https://capsule-render.vercel.app/api?type=waving&color=gradient&customColorList=12&height=300&section=header&text=FastDL%20Enhanced&fontSize=80&fontAlignY=35&desc=Lightning-Fast%20Multi-Threaded%20Download%20Manager%20with%20SHA-256%20Verification&descAlignY=55&animation=fadeIn" width="100%"/>
+<img src="https://capsule-render.vercel.app/api?type=waving&color=gradient&customColorList=12&height=300&section=header&text=FastDL&fontSize=80&fontAlignY=35&desc=High-Performance%20Multi-Threaded%20Download%20Manager%20with%20Web%20UI&descAlignY=55&animation=fadeIn" width="100%"/>
 
 <!-- Enhanced Badges -->
 <p align="center">
@@ -24,12 +24,12 @@
 
 <!-- Enhanced Animated Typing -->
 <p align="center">
-  <img src="https://readme-typing-svg.herokuapp.com?font=JetBrains+Mono&weight=600&size=24&pause=1000&color=6C63FF&center=true&vCenter=true&random=false&width=800&lines=Saturate+Your+Gigabit+Connection;32%2B+Parallel+Connections;SHA-256+File+Verification;GOLANG+Core+%2B+Bash+UI;Download+at+Light+Speed;Zero+Dependencies" alt="Typing SVG"/>
+  <img src="https://readme-typing-svg.herokuapp.com?font=JetBrains+Mono&weight=600&size=24&pause=1000&color=6C63FF&center=true&vCenter=true&random=false&width=800&lines=Saturate+Your+Gigabit+Connection;32%2B+Parallel+Connections;Built-in+SHA+Verification;Go+Core+%2B+Web+Dashboard;Download+at+Light+Speed;Zero+Dependencies" alt="Typing SVG"/>
 </p>
 
 <!-- Enhanced Tech Stack Icons -->
 <p align="center">
-  <img src="https://skillicons.dev/icons?i=rust,bash,linux,git,github&theme=dark" />
+  <img src="https://skillicons.dev/icons?i=go,sqlite,html,js,css,linux&theme=dark" />
 </p>
 
 </div>
@@ -38,33 +38,38 @@
 
 <div align="center">
   
-### ⚡ **Blazing Fast** • 🔐 **SHA-256 Verified** • 🚀 **Production Ready** • **GOLANG Powered**
+### ⚡ **Blazing Fast** • 🔒 **SHA-256 Verified** • 🚀 **Production Ready** • **Go Powered**
 
 </div>
 
 ---
 
-## 🌟 **What's New in Enhanced Edition**
+## 🌟 **What Makes FastDL Special**
 
 <table>
 <tr>
 <td width="50%" valign="top">
 
-### 🔐 **Security First**
-- **SHA-256 file verification** built-in
-- Automatic checksum generation
+### 🔒 **Security First**
+- **SHA-256/SHA-1/MD5 verification** built-in
+- Automatic checksum validation
 - Batch verification from checksum files
 - Integrity validation before completion
 
+### 📊 **Advanced Features**
+- Real-time progress monitoring
+- Enhanced error handling & retries
+- SQLite job persistence
+- System resource monitoring
 
 </td>
 <td width="50%" valign="top">
 
-### 📊 **Advanced Features**
-- Real-time JSON progress reporting
-- Enhanced error handling & retries
-- Improved batch processing
-- System resource monitoring
+### 🌐 **Web Dashboard**
+- Modern web interface
+- RESTful API endpoints
+- Real-time job management
+- Mobile-responsive design
 
 ### 🎯 **Smart Optimization**
 - Auto-detects server capabilities
@@ -82,25 +87,24 @@
 
 <div align="center">
 
-### **One-Line Install**
+### **One-Line Install & Launch**
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/0xb0rn3/fastdl/main/fastdl -o fastdl && chmod +x fastdl && ./fastdl --install
+# Download and run the installer
+curl -sSL https://raw.githubusercontent.com/0xb0rn3/fastdl/main/run -o run && chmod +x run && ./run
 ```
 
 <details> 
-<summary><b>🔐 Secure Installation (Recommended)</b></summary>
+<summary><b>📋 Manual Installation</b></summary>
 
 ```bash
-# Download and verify
-curl -sSL https://raw.githubusercontent.com/0xb0rn3/fastdl/main/fastdl -o fastdl
-curl -sSL https://raw.githubusercontent.com/0xb0rn3/fastdl/main/fastdl.sig -o fastdl.sig
+# Clone the repository
+git clone https://github.com/0xb0rn3/fastdl.git
+cd fastdl
 
-# Verify signature (requires GPG key)
-gpg --verify fastdl.sig fastdl
-
-# Install with automatic setup
-chmod +x fastdl && ./fastdl --install
+# Run the installer
+chmod +x run
+./run
 ```
 
 </details>
@@ -114,12 +118,12 @@ chmod +x fastdl && ./fastdl --install
 <div align="center">
 <table>
 <tr>
-<td><img src="https://via.placeholder.com/400x250/1a1a2e/16213e?text=Enhanced+Menu" alt="Enhanced Menu"/><br/><b>Enhanced Interactive Menu</b></td>
-<td><img src="https://via.placeholder.com/400x250/16213e/0f3460?text=SHA+Verification" alt="SHA Verification"/><br/><b>SHA-256 Verification</b></td>
+<td><img src="https://via.placeholder.com/400x250/1a1a2e/16213e?text=Interactive+Menu" alt="Interactive Menu"/><br/><b>Interactive Installation Menu</b></td>
+<td><img src="https://via.placeholder.com/400x250/16213e/0f3460?text=Web+Dashboard" alt="Web Dashboard"/><br/><b>Web Dashboard</b></td>
 </tr>
 <tr>
-<td><img src="https://via.placeholder.com/400x250/0f3460/533483?text=Rust+Core" alt="Rust Core"/><br/><b>Rust Core Performance</b></td>
-<td><img src="https://via.placeholder.com/400x250/533483/c06c84?text=Real-time+Progress" alt="Progress"/><br/><b>Real-time Progress</b></td>
+<td><img src="https://via.placeholder.com/400x250/0f3460/533483?text=TUI+Mode" alt="TUI Mode"/><br/><b>Terminal UI Mode</b></td>
+<td><img src="https://via.placeholder.com/400x250/533483/c06c84?text=Progress+Monitor" alt="Progress"/><br/><b>Real-time Progress</b></td>
 </tr>
 </table>
 </div>
@@ -130,48 +134,36 @@ chmod +x fastdl && ./fastdl --install
 
 ### **Interactive Mode** (Recommended)
 ```bash
+# Launch the management interface
+./run
+
+# Or if installed globally
 fastdl
 ```
 
-### **Enhanced CLI Commands**
+### **CLI Commands**
 
 <details>
-<summary><b>📥 Single Download with SHA Verification</b></summary>
+<summary><b>🔥 Single Download with Verification</b></summary>
 
 ```bash
 # Basic download
-fastdl -d https://example.com/file.iso
+fastdl download https://example.com/file.iso
+
+# With custom connections and output
+fastdl download -c 64 -o ~/Downloads/myfile.iso https://example.com/file.iso
 
 # With SHA-256 verification
-fastdl -d https://example.com/file.iso "" 32 abc123def456...
-
-# Custom output and connections
-fastdl -d https://example.com/file.iso ~/Downloads/myfile.iso 64
+fastdl download --sha256=abc123def456... https://example.com/file.iso
 
 # Resume interrupted download
-fastdl -r https://example.com/file.iso ~/Downloads/myfile.iso
+fastdl download --resume https://example.com/file.iso
 ```
 
 </details>
 
 <details>
-<summary><b>🔐 File Verification</b></summary>
-
-```bash
-# Verify single file
-fastdl -v ~/Downloads/file.iso abc123def456...
-
-# Generate checksums for directory
-fastdl --generate-checksums ~/Downloads
-
-# Verify all files from checksum file
-fastdl --verify-checksums ~/Downloads/checksums.sha256
-```
-
-</details>
-
-<details>
-<summary><b>📦 Enhanced Batch Download</b></summary>
+<summary><b>📦 Batch Download</b></summary>
 
 ```bash
 # Create URL file with optional checksums
@@ -183,63 +175,63 @@ https://example.com/file3.iso sha256:def456...
 https://example.com/file4.deb
 EOF
 
-# Download with verification
-fastdl -b urls.txt ~/Downloads 8
-
-# CLI batch processing
-fastdl --batch urls.txt --output-dir ./downloads --concurrent 4
+# Download batch
+fastdl batch -c 4 urls.txt
 ```
 
 </details>
 
 <details>
-<summary><b>📊 System Information</b></summary>
+<summary><b>🌐 Daemon Mode</b></summary>
 
 ```bash
-# Show enhanced system info
-fastdl -i
+# Start daemon with web interface
+fastdl daemon
 
-# Run performance benchmark
-fastdl --benchmark
+# Custom port
+fastdl daemon -port 8080
 
-# Test optimal settings
-fastdl --optimize
+# Then visit http://localhost:8080
+```
+
+</details>
+
+<details>
+<summary><b>🔍 File Verification</b></summary>
+
+```bash
+# Verify single file
+fastdl verify -a sha256 file.iso abc123def456...
+
+# Show file info
+fastdl info
 ```
 
 </details>
 
 ---
 
-## ⚙️ **Enhanced Configuration**
+## ⚙️ **Configuration**
 
 <details>
-<summary><b>📝 Config File (~/.fastdl/config.toml)</b></summary>
+<summary><b>📁 Config File (~/.config/fastdl/config.json)</b></summary>
 
-```toml
-# FastDL Enhanced Configuration
-downloads_dir = "~/Downloads/FastDL"
-max_connections = 32
-chunk_size = "4MB"
-max_concurrent = 4
-auto_resume = true
-verify_ssl = true
-auto_verify_sha = true
-
-[network]
-timeout = 30
-retries = 5
-user_agent = "FastDL/3.1.0"
-
-[verification]
-auto_sha256 = false
-save_checksums = true
-checksum_file = "checksums.sha256"
-
-[ui]
-theme = "default"
-show_progress = true
-auto_clear = false
-show_speed = true
+```json
+{
+  "max_connections": 32,
+  "chunk_size": 4194304,
+  "download_dir": "~/Downloads",
+  "enable_daemon": false,
+  "daemon_port": 8080,
+  "enable_http2": true,
+  "resume_enabled": true,
+  "verify_checksum": true,
+  "user_agent": "FastDL/5.0.0",
+  "timeout_seconds": 30,
+  "max_retries": 5,
+  "rate_limit_bytes": 0,
+  "database_path": "~/.config/fastdl/fastdl.db"
+}
 ```
 
 </details>
@@ -262,10 +254,10 @@ export FASTDL_AUTO_VERIFY=1
 
 <div align="center">
 
-### **Enhanced Performance Metrics**
+### **Performance Metrics**
 
-| **Connection Type** | **Traditional** | **FastDL v3.0** | **FastDL Enhanced** | **Improvement** |
-|:------------------:|:---------------:|:----------------:|:-------------------:|:---------------:|
+| **Connection Type** | **wget/curl** | **aria2c** | **FastDL v5.0** | **Improvement** |
+|:------------------:|:-------------:|:----------:|:---------------:|:---------------:|
 | 1 Gbps Fiber | 45 MB/s | 118 MB/s | **125 MB/s** | **2.8x** |
 | 100 Mbps Cable | 11 MB/s | 12.3 MB/s | **12.8 MB/s** | **1.2x** |
 | 4G LTE | 3.2 MB/s | 5.8 MB/s | **6.2 MB/s** | **1.9x** |
@@ -274,20 +266,20 @@ export FASTDL_AUTO_VERIFY=1
 </div>
 
 <details>
-<summary><b>📈 Enhanced Architecture Flow</b></summary>
+<summary><b>📈 Architecture Overview</b></summary>
 
 ```mermaid
 graph TB
-    A[URL Input] -->|Validate| B[Rust Core Engine]
+    A[URL Input] -->|Validate| B[Go Core Engine]
     B -->|HTTP HEAD| C[Server Analysis]
     C -->|Range Support?| D{Range Requests}
     D -->|Yes| E[Parallel Chunks]
     D -->|No| F[Single Stream]
     E --> G[32+ Workers]
     F --> G
-    G -->|Streaming| H[Memory Buffer]
+    G -->|Goroutines| H[Memory Buffer]
     H -->|Zero-Copy| I[File Write]
-    I -->|Complete| J[SHA-256 Verify]
+    I -->|Complete| J[SHA Verification]
     J -->|Valid| K[Success]
     J -->|Invalid| L[Retry/Fail]
     
@@ -308,24 +300,24 @@ graph TB
 <tr>
 <td>
 
-### **🔍 Smart Analysis**
+### **🌐 Web Dashboard**
 ```bash
-fastdl --analyze https://example.com/file
+fastdl daemon
 ```
-- Server capability detection
-- Range request support
-- Optimal connection calculation
-- SHA verification available
+- Modern web interface
+- Real-time progress monitoring
+- Job queue management
+- API endpoints
 
 </td>
 <td>
 
-### **🔐 Security Suite**
+### **🔒 Security Suite**
 ```bash
-fastdl --security-scan
+fastdl verify file.iso hash
 ```
-- SHA-256 generation
-- Bulk verification
+- SHA-256/SHA-1/MD5 verification
+- Bulk verification tools
 - Checksum database
 - Integrity monitoring
 
@@ -334,26 +326,26 @@ fastdl --security-scan
 <tr>
 <td>
 
-### **📊 Performance Monitor**
+### **📊 TUI Interface**
 ```bash
-fastdl --dashboard
+fastdl tui
 ```
-- Real-time speed graphs
-- Connection utilization
-- Memory usage tracking
-- Download queue status
+- Interactive terminal UI
+- Real-time progress bars
+- Queue management
+- Configuration editor
 
 </td>
 <td>
 
-### **🎯 Auto-Optimization**
+### **🎯 Smart Features**
 ```bash
-fastdl --optimize
+fastdl config
 ```
-- System benchmark
-- Network speed test
-- Optimal settings detection
-- Auto-configuration
+- Auto-resume downloads
+- Rate limiting
+- Proxy support
+- Mirror fallback
 
 </td>
 </tr>
@@ -361,18 +353,18 @@ fastdl --optimize
 
 ---
 
-## 🔧 **Architecture**
+## 🏗️ **Architecture**
 
 <div align="center">
 
-### **Enhanced Multi-Layer Architecture**
+### **Multi-Layer Architecture**
 
 | Layer | Technology | Purpose | Features |
 |:-----:|:----------:|:-------:|:--------:|
-| **UI** | Bash | User Interface | Interactive menus, CLI, Progress bars |
-| **Core** | Rust | Download Engine | HTTP/2, Parallel chunks, Stream processing |
-| **Verification** | SHA-256 | Security | Checksum validation, Integrity verification |
-| **Storage** | TOML | Configuration | Settings, Preferences, Auto-tuning |
+| **Web UI** | HTML/JS/CSS | User Interface | Dashboard, API, Mobile-responsive |
+| **Core** | Go | Download Engine | HTTP/2, Goroutines, SQLite |
+| **Security** | SHA-2/1/MD5 | Verification | Checksum validation, Integrity |
+| **Storage** | JSON/SQLite | Persistence | Configuration, Job queue, Resume data |
 
 </div>
 
@@ -384,27 +376,32 @@ fastdl --optimize
 <summary><b>📖 Complete Command List</b></summary>
 
 ```bash
-# Installation & Setup
-fastdl --install                    # Install FastDL system
+# Installation & Management
+./run                               # Interactive installer/manager
 fastdl --version                    # Show version info
 
 # Downloads
-fastdl -d URL [OUTPUT] [CONN] [SHA] # Quick download
-fastdl -b FILE [DIR] [CONCURRENT]   # Batch download
-fastdl -r URL [OUTPUT] [CONN]       # Resume download
+fastdl download URL [options]       # Single download
+fastdl batch FILE [options]         # Batch download
+fastdl tui                          # Interactive TUI mode
+
+# Daemon Mode
+fastdl daemon [options]             # Start web server
+fastdl daemon -port 8080           # Custom port
 
 # Verification
-fastdl -v FILE HASH                 # Verify file
-fastdl --verify-checksums FILE      # Verify from checksum file
-fastdl --generate-checksums DIR     # Generate checksums
+fastdl verify FILE HASH             # Verify file hash
+fastdl verify -a sha256 FILE HASH   # Specify algorithm
 
-# System & Info
-fastdl -i                           # System information
-fastdl --benchmark                  # Performance test
-fastdl --analyze URL                # URL analysis
+# Configuration
+fastdl config -show                 # View config
+fastdl config -edit                 # Interactive editor
+fastdl config -set key=value        # Set specific value
+fastdl config -reset                # Reset to defaults
 
-# Interactive
-fastdl                              # Launch interactive mode
+# Information
+fastdl info                         # System information
+fastdl help                         # Show help
 ```
 
 </details>
@@ -418,10 +415,10 @@ fastdl                              # Launch interactive mode
 <td width="50%">
 
 ### **Built-in Verification**
-- ✅ **SHA-256 checksums** for all downloads
+- ✅ **SHA-256/SHA-1/MD5 checksums** for all downloads
 - ✅ **Automatic verification** on completion
-- ✅ **Checksum database** management
 - ✅ **Batch verification** tools
+- ✅ **Resume with integrity** checking
 
 </td>
 <td width="50%">
@@ -430,7 +427,7 @@ fastdl                              # Launch interactive mode
 - ✅ **SSL/TLS verification** by default
 - ✅ **Certificate validation**
 - ✅ **Secure connection handling**
-- ✅ **Privacy-focused downloads**
+- ✅ **Proxy support** with authentication
 
 </td>
 </tr>
@@ -442,18 +439,18 @@ fastdl                              # Launch interactive mode
 
 <div align="center">
 
-We welcome contributions to FastDL Enhanced! Whether it's bug reports, feature requests, or code contributions.
+We welcome contributions to FastDL! Whether it's bug reports, feature requests, or code contributions.
 
 [![Contributors](https://contrib.rocks/image?repo=0xb0rn3/fastdl)](https://github.com/0xb0rn3/fastdl/graphs/contributors)
 
-### **Development Areas**
+### **Development Stack**
 
 | Component | Language | Focus |
 |:---------:|:--------:|:-----:|
-| **Core Engine** | Rust | Performance, Security |
-| **UI/UX** | Bash | Usability, Features |
-| **Documentation** | Markdown | Clarity, Examples |
-| **Testing** | Mixed | Reliability, Coverage |
+| **Core Engine** | Go | Performance, Concurrency |
+| **Web UI** | HTML/JS/CSS | User Experience |
+| **Database** | SQLite | Job Persistence |
+| **Installer** | Bash | Cross-platform Setup |
 
 [Contributing Guidelines](CONTRIBUTING.md) • [Code of Conduct](CODE_OF_CONDUCT.md) • [Security Policy](SECURITY.md)
 
@@ -466,29 +463,29 @@ We welcome contributions to FastDL Enhanced! Whether it's bug reports, feature r
 <details>
 <summary><b>🚧 Upcoming Features</b></summary>
 
-### **v3.2 - Advanced Resume**
+### **v5.1 - Enhanced Resume**
 - [ ] Smart resume with range verification
-- [ ] Download queue persistence
+- [ ] Download queue persistence improvements
 - [ ] Crash recovery system
 - [ ] Progress state management
 
-### **v3.3 - Protocol Expansion**
-- [ ] HTTP/2 multiplexing
-- [ ] FTP/SFTP support  
-- [ ] Torrent integration
-- [ ] Cloud storage APIs
+### **v5.2 - Protocol Expansion**
+- [ ] HTTP/3 support
+- [ ] FTP/SFTP protocols
+- [ ] WebDAV support
+- [ ] Cloud storage APIs (S3, GCS)
 
-### **v3.4 - Web Interface**
-- [ ] Browser-based dashboard
-- [ ] Remote download management
-- [ ] API endpoints
-- [ ] Mobile responsive UI
+### **v5.3 - Advanced UI**
+- [ ] Improved web dashboard
+- [ ] Real-time charts and graphs
+- [ ] Mobile app companion
+- [ ] Desktop notifications
 
-### **v4.0 - AI Integration**
+### **v6.0 - AI Integration**
 - [ ] Smart connection optimization
 - [ ] Predictive downloading
-- [ ] Bandwidth learning
-- [ ] Auto-scheduling
+- [ ] Bandwidth learning algorithms
+- [ ] Auto-scheduling system
 
 </details>
 
@@ -498,15 +495,15 @@ We welcome contributions to FastDL Enhanced! Whether it's bug reports, feature r
 
 <div align="center">
 
-| Feature | wget | curl | aria2c | **FastDL Enhanced** |
-|:-------:|:----:|:----:|:------:|:------------------:|
+| Feature | wget | curl | aria2c | **FastDL v5.0** |
+|:-------:|:----:|:----:|:------:|:---------------:|
 | **Parallel Connections** | ❌ | ❌ | ✅ | ✅ |
-| **SHA-256 Verification** | ❌ | ❌ | ✅ | ✅ |
-| **Interactive UI** | ❌ | ❌ | ❌ | ✅ |
+| **SHA Verification** | ❌ | ❌ | ✅ | ✅ |
+| **Web Dashboard** | ❌ | ❌ | ❌ | ✅ |
+| **Job Queue** | ❌ | ❌ | ❌ | ✅ |
 | **Auto-Resume** | ✅ | ❌ | ✅ | ✅ |
 | **Batch Downloads** | ❌ | ❌ | ✅ | ✅ |
-| **Progress Monitoring** | Basic | Basic | Good | **Advanced** |
-| **Zero Dependencies** | ✅ | ✅ | ❌ | ✅ |
+| **TUI Interface** | ❌ | ❌ | ❌ | ✅ |
 | **Easy Installation** | ✅ | ✅ | ❌ | ✅ |
 | **Performance** | 1x | 1x | 3x | **4x** |
 
@@ -519,14 +516,14 @@ We welcome contributions to FastDL Enhanced! Whether it's bug reports, feature r
 <details>
 <summary><b>🔧 Installation & Setup</b></summary>
 
-**Q: Do I need to install Rust separately?**
-A: No! FastDL automatically installs and manages its Rust dependencies during setup.
+**Q: Do I need to install Go separately?**
+A: No! The installer automatically handles Go installation and dependency management.
 
 **Q: What if the installation fails?**
-A: Check the log file at `~/.fastdl/fastdl.log` for detailed error information.
+A: Check the log file at `~/.config/fastdl/install.log` for detailed error information.
 
 **Q: Can I use FastDL without root access?**
-A: Yes! FastDL installs to user directories and doesn't require root privileges.
+A: The installer needs sudo only for system package installation. FastDL itself runs in user space.
 
 </details>
 
@@ -536,25 +533,25 @@ A: Yes! FastDL installs to user directories and doesn't require root privileges.
 **Q: How many connections should I use?**
 A: FastDL auto-detects optimal settings, but generally 16-64 works best for most connections.
 
-**Q: Does SHA verification slow down downloads?**
-A: Minimal impact - verification runs in parallel with downloading.
+**Q: Does verification slow down downloads?**
+A: Minimal impact - verification runs concurrently with downloading using goroutines.
 
 **Q: Can I pause and resume downloads?**
-A: Yes! Use Ctrl+C to pause, then `fastdl --resume` to continue.
+A: Yes! Downloads can be paused and resumed, with integrity checking.
 
 </details>
 
 <details>
 <summary><b>🔒 Security & Verification</b></summary>
 
-**Q: How do I get SHA-256 hashes?**
-A: Many sites provide them, or use `fastdl --generate-checksums` after download.
+**Q: How do I get file hashes for verification?**
+A: Many sites provide them, or FastDL can generate checksums after download.
 
 **Q: What if verification fails?**
-A: FastDL will automatically retry the download or report corruption.
+A: FastDL will automatically retry the download or report corruption details.
 
-**Q: Is my download data secure?**
-A: Yes - FastDL uses SSL/TLS by default and doesn't log sensitive information.
+**Q: Is the web dashboard secure?**
+A: The dashboard runs locally by default. For remote access, use proper firewalling.
 
 </details>
 
@@ -624,15 +621,14 @@ Permission is hereby granted, free of charge, to any person obtaining a copy of 
 
 ### **Built With**
 
-- **[Rust](https://rust-lang.org)** - Core download engine
-- **[Tokio](https://tokio.rs)** - Async runtime
-- **[Reqwest](https://docs.rs/reqwest)** - HTTP client
-- **[Clap](https://docs.rs/clap)** - Command line parsing
-- **[SHA2](https://docs.rs/sha2)** - Cryptographic hashing
+- **[Go](https://golang.org)** - Core programming language
+- **[SQLite](https://sqlite.org)** - Database engine
+- **[HTTP/2](https://http2.github.io/)** - Network protocol
+- **[Goroutines](https://go.dev/tour/concurrency)** - Concurrency model
 
 ### **Special Thanks**
 
-- Rust community for excellent async ecosystem
+- Go community for excellent standard library
 - All contributors and issue reporters
 - Beta testers and early adopters
 - Open source projects that inspired this work
@@ -646,6 +642,6 @@ Permission is hereby granted, free of charge, to any person obtaining a copy of 
 
 <br/>
 
-**Made with 💜 and 🦀 by [0xb0rn3](https://github.com/0xb0rn3) | [0xbv1](https://github.com/0xbv1)**
+**Made with 💜 and 🐹 by [0xb0rn3](https://github.com/0xb0rn3) | [0xbv1](https://github.com/0xbv1)**
 
 </div>
