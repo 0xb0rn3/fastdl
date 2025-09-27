@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 # FastDL Run Script - Interactive Installation & Management System
-# Version: 1.0.0
+# Version: 1.0.1
 # Author: 0xb0rn3
 
 set -euo pipefail
@@ -278,11 +278,11 @@ build_fastdl() {
     cd "${BUILD_DIR}"
     
     # Initialize Go module
-    if [[ ! -f "go.mod" ]]; then
-        go mod init fastdl
-    fi
+    info "Initializing Go module..."
+    go mod init fastdl 2>/dev/null || true
     
-    # Add required dependencies
+    # Create proper go.mod with exact versions
+    info "Setting up dependencies..."
     cat > go.mod << 'EOF'
 module fastdl
 
@@ -294,19 +294,45 @@ require (
     golang.org/x/net v0.21.0
     golang.org/x/time v0.5.0
 )
+
+require (
+    golang.org/x/sys v0.17.0 // indirect
+    golang.org/x/term v0.17.0 // indirect
+    golang.org/x/text v0.14.0 // indirect
+)
 EOF
     
-    # Download dependencies
+    # Download and tidy dependencies
     info "Downloading dependencies..."
     go mod download
+    go mod tidy
     
-    # Build with optimizations
+    # Verify dependencies are available
+    info "Verifying dependencies..."
+    if ! go list -m all &>/dev/null; then
+        error "Failed to resolve dependencies"
+        return 1
+    fi
+    
+    # Build with optimizations and static linking
     info "Compiling binary..."
-    CGO_ENABLED=1 go build -ldflags="-s -w -X main.Version=5.0.0" -o "${BINARY_NAME}" "${SOURCE_FILE}"
+    export CGO_ENABLED=1
+    export CGO_LDFLAGS="-static"
+    
+    if ! go build -v -ldflags="-s -w -X main.Version=5.0.0 -extldflags=-static" -tags sqlite_omit_load_extension -o "${BINARY_NAME}" "${SOURCE_FILE}"; then
+        error "Build failed! Check the log for details."
+        return 1
+    fi
     
     if [[ ! -f "${BINARY_NAME}" ]]; then
-        error "Build failed!"
+        error "Binary was not created!"
         return 1
+    fi
+    
+    # Verify binary works
+    info "Testing binary..."
+    if ! ./"${BINARY_NAME}" version &>/dev/null; then
+        warning "Binary created but version check failed"
     fi
     
     # Install binary
@@ -343,14 +369,22 @@ first_time_setup() {
     
     # Step 2: Dependencies
     echo -e "\n${YELLOW}Step 2/4: Installing Dependencies${NC}"
-    install_dependencies &
-    spinner $!
+    if ! install_dependencies; then
+        error "Failed to install dependencies"
+        exit 1
+    fi
     check_go
     
     # Step 3: Build
     echo -e "\n${YELLOW}Step 3/4: Building FastDL${NC}"
-    build_fastdl &
-    spinner $!
+    if ! build_fastdl; then
+        error "Failed to build FastDL"
+        echo -e "\n${RED}Build failed. Common solutions:${NC}"
+        echo -e "${WHITE}- Ensure you have a stable internet connection${NC}"
+        echo -e "${WHITE}- Try running: sudo apt-get install build-essential${NC}"
+        echo -e "${WHITE}- Check the log file: ${LOG_FILE}${NC}"
+        exit 1
+    fi
     
     # Step 4: Configuration
     echo -e "\n${YELLOW}Step 4/4: Initial Configuration${NC}"
@@ -365,15 +399,18 @@ first_time_setup() {
   "daemon_port": 8080,
   "enable_http2": true,
   "resume_enabled": true,
-  "verify_checksum": true
+  "verify_checksum": true,
+  "user_agent": "FastDL/5.0.0",
+  "timeout_seconds": 30,
+  "max_retries": 5
 }
 EOF
     
     success "Configuration created"
     
-    echo -e "\n${GREEN}═══════════════════════════════════════════════${NC}"
+    echo -e "\n${GREEN}══════════════════════════════════════════════${NC}"
     echo -e "${GREEN}${BOLD}Installation Complete!${NC}"
-    echo -e "${GREEN}═══════════════════════════════════════════════${NC}\n"
+    echo -e "${GREEN}══════════════════════════════════════════════${NC}\n"
     
     echo -e "${CYAN}FastDL has been successfully installed!${NC}"
     echo -e "${WHITE}You can now use it by running:${NC} ${YELLOW}fastdl${NC}"
@@ -469,7 +506,7 @@ configure_fastdl() {
     
     if [[ ! -f "$config_file" ]]; then
         warning "Config file not found. Creating default configuration..."
-        "${INSTALL_DIR}/${BINARY_NAME}" config -reset
+        "${INSTALL_DIR}/${BINARY_NAME}" config -reset 2>/dev/null || true
     fi
     
     echo -e "${WHITE}1)${NC} Edit configuration interactively"
@@ -484,29 +521,29 @@ configure_fastdl() {
     
     case $choice in
         1)
-            "${INSTALL_DIR}/${BINARY_NAME}" config -edit
+            "${INSTALL_DIR}/${BINARY_NAME}" config -edit || true
             ;;
         2)
-            "${INSTALL_DIR}/${BINARY_NAME}" config -show
+            "${INSTALL_DIR}/${BINARY_NAME}" config -show || cat "$config_file" 2>/dev/null || echo "No config found"
             ;;
         3)
-            "${INSTALL_DIR}/${BINARY_NAME}" config -reset
+            "${INSTALL_DIR}/${BINARY_NAME}" config -reset || true
             success "Configuration reset to defaults"
             ;;
         4)
             read -p "Enter download directory: " dir
-            "${INSTALL_DIR}/${BINARY_NAME}" config -set "download_dir=$dir"
+            "${INSTALL_DIR}/${BINARY_NAME}" config -set "download_dir=$dir" || true
             success "Download directory set to: $dir"
             ;;
         5)
             read -p "Enter max connections (1-128): " conn
-            "${INSTALL_DIR}/${BINARY_NAME}" config -set "max_connections=$conn"
+            "${INSTALL_DIR}/${BINARY_NAME}" config -set "max_connections=$conn" || true
             success "Max connections set to: $conn"
             ;;
         6)
             read -p "Enter rate limit in MB/s (0 for unlimited): " rate
             rate_bytes=$((rate * 1024 * 1024))
-            "${INSTALL_DIR}/${BINARY_NAME}" config -set "rate_limit=$rate_bytes"
+            "${INSTALL_DIR}/${BINARY_NAME}" config -set "rate_limit=$rate_bytes" || true
             success "Rate limit set to: ${rate} MB/s"
             ;;
     esac
@@ -532,23 +569,23 @@ launch_fastdl() {
     
     case $choice in
         1)
-            "${INSTALL_DIR}/${BINARY_NAME}" tui
+            "${INSTALL_DIR}/${BINARY_NAME}" tui || "${INSTALL_DIR}/${BINARY_NAME}" || true
             ;;
         2)
             echo -e "\n${INFO}Starting daemon on port 8080...${NC}"
             echo -e "${WHITE}Web UI will be available at: ${CYAN}http://localhost:8080${NC}\n"
-            "${INSTALL_DIR}/${BINARY_NAME}" daemon
+            "${INSTALL_DIR}/${BINARY_NAME}" daemon || true
             ;;
         3)
             read -p "Enter URL to download: " url
             if [[ -n "$url" ]]; then
-                "${INSTALL_DIR}/${BINARY_NAME}" download "$url"
+                "${INSTALL_DIR}/${BINARY_NAME}" download "$url" || true
             fi
             ;;
         4)
             read -p "Enter path to URL list file: " file
             if [[ -f "$file" ]]; then
-                "${INSTALL_DIR}/${BINARY_NAME}" batch "$file"
+                "${INSTALL_DIR}/${BINARY_NAME}" batch "$file" || true
             else
                 error "File not found: $file"
             fi
@@ -561,7 +598,7 @@ launch_fastdl() {
                 if [[ "$cmd" == "exit" ]]; then
                     break
                 fi
-                "${INSTALL_DIR}/${BINARY_NAME}" $cmd
+                "${INSTALL_DIR}/${BINARY_NAME}" $cmd || true
             done
             ;;
     esac
@@ -606,7 +643,7 @@ show_system_info() {
     
     # Show FastDL features
     if is_installed; then
-        "${INSTALL_DIR}/${BINARY_NAME}" info
+        "${INSTALL_DIR}/${BINARY_NAME}" info 2>/dev/null || echo "Info command not available"
     fi
     
     echo
